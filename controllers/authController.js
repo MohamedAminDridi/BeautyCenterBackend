@@ -30,7 +30,7 @@ const registerUser = async (req, res) => {
     });
 
     await newUser.save();
-
+console.log('Cloudinary file:', file);
     const token = jwt.sign(
       { id: newUser._id, role: newUser.role },
       process.env.JWT_SECRET,
@@ -51,6 +51,8 @@ const registerUser = async (req, res) => {
         isActive: newUser.isActive,
       },
     });
+    
+
   } catch (err) {
     console.error("❌ Registration error:", err);
     res.status(500).json({ message: "Server error", error: err.message });

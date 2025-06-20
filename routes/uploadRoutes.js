@@ -31,11 +31,4 @@ const authenticateToken = (req, res, next) => {
 };
 
 // ✅ Upload to Cloudinary
-router.post('/upload', authenticateToken, upload.single('image'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
-
-  // ✅ Cloudinary gives a secure URL
-  res.json({ imageUrl: req.file.path });
-});
-
 module.exports = router;

@@ -31,7 +31,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 
 // MongoDB connection
-mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/hairsalon', {
+mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/test', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
