@@ -17,7 +17,7 @@ const authMiddleware = (req, res, next) => {
     }
 
     req.user = {
-      _id: decoded.id,
+      id: decoded.id,
       role: decoded.role || 'client', // Default to client if not provided
     };
 

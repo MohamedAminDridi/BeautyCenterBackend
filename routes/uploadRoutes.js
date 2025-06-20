@@ -46,7 +46,8 @@ router.post('/upload', authenticateToken, upload.single('image'), (req, res) => 
     return res.status(400).json({ error: 'No image file uploaded' });
   }
 
-  const imageUrl = `http://192.168.1.120:5000/uploads/${req.file.filename}`;
+  // ✅ Only save relative path
+  const imageUrl = `/uploads/${req.file.filename}`;
   res.json({ imageUrl });
 });
 
