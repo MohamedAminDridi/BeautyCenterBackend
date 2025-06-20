@@ -26,7 +26,7 @@ const registerUser = async (req, res) => {
       email,
       password: hashedPassword,
       role,
-      profileImageUrl: file ? `/uploads/${file.filename}` : null,
+      profileImageUrl: file ? file.path : null, // ✅ Cloudinary URL
     });
 
     await newUser.save();
