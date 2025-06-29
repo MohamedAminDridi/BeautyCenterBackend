@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Service = require('../models/Service');
-const upload = require('../middleware/upload'); // Multer middleware
+const upload = require('../middleware/upload'); // Updated to use CloudinaryStorage
 
 // CREATE service
 router.post('/', upload.single('image'), async (req, res) => {
@@ -12,10 +12,10 @@ router.post('/', upload.single('image'), async (req, res) => {
       name,
       category,
       description,
-      price,
-      duration,
+      price: parseFloat(price),
+      duration: parseInt(duration),
       personnel: personnel ? personnel.split(',') : [],
-      imageUrl: req.file ? `/uploads/${req.file.filename}` : '',
+      imageUrl: req.file ? req.file.path : '', // Cloudinary URL
     });
 
     const saved = await newService.save();
@@ -53,13 +53,13 @@ router.put('/:id', upload.single('image'), async (req, res) => {
       name: req.body.name,
       category: req.body.category,
       description: req.body.description,
-      price: req.body.price,
-      duration: req.body.duration,
+      price: parseFloat(req.body.price),
+      duration: parseInt(req.body.duration),
       personnel: req.body.personnel ? req.body.personnel.split(',') : [],
     };
 
     if (req.file) {
-      update.imageUrl = `/uploads/${req.file.filename}`;
+      update.imageUrl = req.file.path; // Update with Cloudinary URL
     }
 
     const updated = await Service.findByIdAndUpdate(req.params.id, update, { new: true });
