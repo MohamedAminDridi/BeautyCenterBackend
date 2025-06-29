@@ -29,7 +29,7 @@ app.use('/api/favorites', favoriteRoutes);
 app.use('/api/reservations', reservationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
-
+router.post('/services', );
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/test', {
   useNewUrlParser: true,
