@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const Service = require('../models/Service');
-
+const authMiddleware = require('../middleware/authMiddleware');
 
 // CREATE service
-router.post('/', async (req, res) => {
+router.post('/', authMiddleware, async (req, res) => { // Ajout de authMiddleware
   try {
     const { name, category, description, price, duration, personnel, imageUrl } = req.body;
 
@@ -15,7 +15,7 @@ router.post('/', async (req, res) => {
       price: parseFloat(price),
       duration: parseInt(duration),
       personnel: personnel ? personnel.split(',') : [],
-      imageUrl: imageUrl || '', // Use the imageUrl from the request body
+      imageUrl: imageUrl || '',
     });
 
     const saved = await newService.save();
@@ -26,9 +26,10 @@ router.post('/', async (req, res) => {
 });
 
 // READ all services
-router.get('/', async (req, res) => {
+router.get('/', authMiddleware, async (req, res) => { // Ajout de authMiddleware
   try {
     const services = await Service.find().populate('personnel', 'firstName lastName profileImageUrl');
+    console.log('🛒 Services fetched:', services); // Ajout de log
     res.json(services);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch services' });
@@ -36,7 +37,7 @@ router.get('/', async (req, res) => {
 });
 
 // READ single service
-router.get('/:id', async (req, res) => {
+router.get('/:id', authMiddleware, async (req, res) => { // Ajout de authMiddleware
   try {
     const service = await Service.findById(req.params.id).populate('personnel', 'firstName lastName');
     if (!service) return res.status(404).json({ error: 'Service not found' });
@@ -47,7 +48,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // UPDATE service
-router.put('/:id', async (req, res) => {
+router.put('/:id', authMiddleware, async (req, res) => { // Ajout de authMiddleware
   try {
     const update = {
       name: req.body.name,
@@ -59,7 +60,7 @@ router.put('/:id', async (req, res) => {
     };
 
     if (req.body.imageUrl) {
-      update.imageUrl = req.body.imageUrl; // Update with the new imageUrl if provided
+      update.imageUrl = req.body.imageUrl;
     }
 
     const updated = await Service.findByIdAndUpdate(req.params.id, update, { new: true });
@@ -70,7 +71,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE service
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authMiddleware, async (req, res) => { // Ajout de authMiddleware
   try {
     await Service.findByIdAndDelete(req.params.id);
     res.json({ message: 'Service deleted' });
