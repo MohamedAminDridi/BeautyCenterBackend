@@ -10,24 +10,23 @@ const expo = new Expo();
 // ✅ Create a reservation and notify personnel
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    console.log('Received body:', req.body); // Log du payload reçu
+    console.log('Received body:', req.body);
     const { services: serviceIds, date } = req.body;
-    const clientId = req.user._id;
+    const clientId = req.user.id; // Utilise req.user.id au lieu de req.user._id
 
     if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0 || !date || isNaN(new Date(date))) {
-      console.log('Validation failed:', { serviceIds, date, isValidDate: !isNaN(new Date(date)) }); // Log de la validation
+      console.log('Validation failed:', { serviceIds, date, isValidDate: !isNaN(new Date(date)) });
       return res.status(400).json({ message: 'Missing or invalid service(s) or date.' });
     }
 
-    console.log('Service IDs to find:', serviceIds); // Log des IDs recherchés
+    console.log('Service IDs to find:', serviceIds);
     const services = await Service.find({ _id: { $in: serviceIds } }).populate('personnel');
-    console.log('Found services:', services); // Log des services trouvés
+    console.log('Found services:', services);
     if (services.length !== serviceIds.length) {
       console.log('Mismatch: Expected', serviceIds.length, 'services, found', services.length);
       return res.status(404).json({ message: 'One or more services not found.' });
     }
 
-    // Vérifie que tous les services ont le même personnel
     const personnelIds = services.map(s => Array.isArray(s.personnel) ? s.personnel[0]?._id : s.personnel?._id);
     const uniquePersonnelIds = [...new Set(personnelIds)];
     if (uniquePersonnelIds.length > 1) {
@@ -42,18 +41,11 @@ router.post('/', authMiddleware, async (req, res) => {
     const totalDuration = services.reduce((total, service) => total + (service.duration || 30), 0);
     const endDate = new Date(startDate.getTime() + totalDuration * 60000);
 
-    // ✅ Check for overlapping reservations
     const conflictingReservation = await Reservation.findOne({
       personnel: personnelId,
       $or: [
-        {
-          date: { $lte: startDate },
-          endTime: { $gt: startDate },
-        },
-        {
-          date: { $lt: endDate },
-          endTime: { $gte: endDate },
-        },
+        { date: { $lte: startDate }, endTime: { $gt: startDate } },
+        { date: { $lt: endDate }, endTime: { $gte: endDate } },
       ],
     });
 
@@ -61,7 +53,7 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(409).json({ message: 'This slot is already booked.' });
     }
 
-    // ✅ Create reservation
+    console.log('Creating reservation with clientId:', clientId);
     const newReservation = await Reservation.create({
       client: clientId,
       service: serviceIds,
@@ -70,7 +62,6 @@ router.post('/', authMiddleware, async (req, res) => {
       endTime: endDate,
     });
 
-    // ✅ Send push notification to assigned personnel
     const personnel = await User.findById(personnelId);
     if (personnel?.pushToken && Expo.isExpoPushToken(personnel.pushToken)) {
       await expo.sendPushNotificationsAsync([
@@ -78,7 +69,7 @@ router.post('/', authMiddleware, async (req, res) => {
           to: personnel.pushToken,
           sound: 'default',
           title: '📅 New Reservation',
-          body: `New booking by ${req.user.firstName} for ${services.map(s => s.name).join(', ')} at ${startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+          body: `New booking by ${req.user.role === 'client' ? req.user.id : 'Staff'} for ${services.map(s => s.name).join(', ')} at ${startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
           data: { reservationId: newReservation._id },
         },
       ]);
