@@ -10,16 +10,20 @@ const expo = new Expo();
 // ✅ Create a reservation and notify personnel
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    const { services: serviceIds, date } = req.body; // Accepte un tableau 'services'
+    console.log('Received body:', req.body); // Log du payload reçu
+    const { services: serviceIds, date } = req.body;
     const clientId = req.user._id;
 
     if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0 || !date || isNaN(new Date(date))) {
+      console.log('Validation failed:', { serviceIds, date, isValidDate: !isNaN(new Date(date)) }); // Log de la validation
       return res.status(400).json({ message: 'Missing or invalid service(s) or date.' });
     }
 
-    // Vérifie tous les services
+    console.log('Service IDs to find:', serviceIds); // Log des IDs recherchés
     const services = await Service.find({ _id: { $in: serviceIds } }).populate('personnel');
+    console.log('Found services:', services); // Log des services trouvés
     if (services.length !== serviceIds.length) {
+      console.log('Mismatch: Expected', serviceIds.length, 'services, found', services.length);
       return res.status(404).json({ message: 'One or more services not found.' });
     }
 
@@ -60,7 +64,7 @@ router.post('/', authMiddleware, async (req, res) => {
     // ✅ Create reservation
     const newReservation = await Reservation.create({
       client: clientId,
-      service: serviceIds, // Stocke le tableau d'IDs
+      service: serviceIds,
       personnel: personnelId,
       date: startDate,
       endTime: endDate,
@@ -93,7 +97,6 @@ router.get('/personnel/:id', authMiddleware, async (req, res) => {
     const reservations = await Reservation.find({ personnel: req.params.id })
       .populate('client')
       .populate('service');
-
     res.json(reservations);
   } catch (err) {
     console.error(err);
@@ -108,7 +111,6 @@ router.get('/', authMiddleware, async (req, res) => {
       .populate('client', 'firstName lastName profileImageUrl')
       .populate('service', 'name')
       .populate('personnel', 'firstName lastName');
-
     res.status(200).json(reservations);
   } catch (err) {
     console.error('❌ Error fetching reservations:', err);
