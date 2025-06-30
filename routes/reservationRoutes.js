@@ -12,7 +12,7 @@ router.post('/', authMiddleware, async (req, res) => {
   try {
     console.log('Received body:', req.body);
     const { services: serviceIds, date } = req.body;
-    const clientId = req.user.id; // Utilise req.user.id au lieu de req.user._id
+    const clientId = req.user.id;
 
     if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0 || !date || isNaN(new Date(date))) {
       console.log('Validation failed:', { serviceIds, date, isValidDate: !isNaN(new Date(date)) });
@@ -79,6 +79,24 @@ router.post('/', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('❌ Server error during reservation:', error);
     res.status(500).json({ message: 'Server error. Could not create reservation.' });
+  }
+});
+
+// ✅ Get upcoming reservations for the authenticated client
+router.get('/upcoming', authMiddleware, async (req, res) => {
+  try {
+    const now = new Date();
+    const upcomingReservations = await Reservation.find({
+      client: req.user.id,
+      date: { $gte: now },
+    })
+      .populate('service', 'name')
+      .populate('personnel', 'firstName lastName');
+    console.log('📅 Upcoming reservations fetched:', upcomingReservations);
+    res.status(200).json(upcomingReservations);
+  } catch (error) {
+    console.error('❌ Error fetching upcoming reservations:', error);
+    res.status(500).json({ message: 'Failed to fetch upcoming reservations.' });
   }
 });
 
