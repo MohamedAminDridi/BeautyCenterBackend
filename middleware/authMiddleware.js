@@ -9,9 +9,14 @@ const authMiddleware = (req, res, next) => {
 
   const token = authHeader.split(" ")[1];
 
+  // Vérifier si JWT_SECRET est défini
+  if (!process.env.JWT_SECRET) {
+    console.error("❌ Configuration Error: JWT_SECRET is not defined in environment variables");
+    return res.status(500).json({ message: "Server configuration error" });
+  }
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
     if (!decoded?.id) {
       return res.status(401).json({ message: "Unauthorized: No user ID in token" });
     }
@@ -24,8 +29,14 @@ const authMiddleware = (req, res, next) => {
     console.log("🔐 Authenticated user:", req.user);
     next();
   } catch (error) {
-    console.error("❌ JWT Error:", error.message);
-    res.status(401).json({ message: "Invalid or expired token" });
+    console.error("❌ JWT Error:", error.name, error.message, error.stack);
+    let errorMessage = "Invalid or expired token";
+    if (error.name === "JsonWebTokenError") {
+      errorMessage = "Invalid token signature";
+    } else if (error.name === "TokenExpiredError") {
+      errorMessage = "Token has expired";
+    }
+    res.status(401).json({ message: errorMessage });
   }
 };
 

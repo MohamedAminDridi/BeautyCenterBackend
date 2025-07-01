@@ -9,7 +9,7 @@ const authenticateToken = (req, res, next) => {
   if (!token) return res.status(401).json({ error: 'Access denied' });
 
   try {
-    const decoded = jwt.verify(token, 'your-secret-key'); // Replace with your JWT secret key
+    const decoded = jwt.verify(token, '1111'); // Replace with your JWT secret key
     req.user = decoded; // Attach decoded user info to request
     next();
   } catch (error) {
