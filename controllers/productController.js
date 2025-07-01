@@ -11,7 +11,13 @@ exports.getAllProducts = async (req, res) => {
 
 exports.createProduct = async (req, res) => {
   const { name, marque, category, quantity, unit, price, supplier, alertThreshold, description, imageUrl, personnel } = req.body;
-console.log('Received product data:', req.body);
+  console.log('Received product data:', req.body);
+
+  // Basic validation for imageUrl if provided
+  if (imageUrl && !isValidUrl(imageUrl)) {
+    return res.status(400).json({ error: 'Invalid image URL format' });
+  }
+
   const newProduct = new Product({
     name,
     marque,
@@ -38,6 +44,11 @@ exports.updateProduct = async (req, res) => {
   const { id } = req.params;
   const updates = req.body;
 
+  // Basic validation for imageUrl if provided
+  if (updates.imageUrl && !isValidUrl(updates.imageUrl)) {
+    return res.status(400).json({ error: 'Invalid image URL format' });
+  }
+
   try {
     const updatedProduct = await Product.findByIdAndUpdate(id, updates, { new: true, runValidators: true });
     if (!updatedProduct) return res.status(404).json({ error: 'Product not found' });
@@ -58,3 +69,13 @@ exports.deleteProduct = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// Helper function to validate URL
+function isValidUrl(string) {
+  try {
+    new URL(string);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}

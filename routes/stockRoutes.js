@@ -1,14 +1,20 @@
 const express = require('express');
 const router = express.Router();
 const productController = require('../controllers/productController');
+const jwt = require('jsonwebtoken'); // Add this line
 
-// Middleware to protect routes (assuming JWT authentication)
+// Middleware to protect routes (JWT authentication)
 const authenticateToken = (req, res, next) => {
   const token = req.headers['authorization']?.split(' ')[1]; // Extract token from "Bearer <token>"
   if (!token) return res.status(401).json({ error: 'Access denied' });
-  // Verify token (implement your JWT verification logic here)
-  // Example: jwt.verify(token, 'your-secret-key');
-  next();
+
+  try {
+    const decoded = jwt.verify(token, 'your-secret-key'); // Replace with your JWT secret key
+    req.user = decoded; // Attach decoded user info to request
+    next();
+  } catch (error) {
+    res.status(403).json({ error: 'Invalid token' });
+  }
 };
 
 // Routes
