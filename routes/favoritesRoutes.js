@@ -1,14 +1,13 @@
-// routes/favoritesRoutes.js
 const express = require('express');
 const router = express.Router();
 const Favorite = require('../models/Favorite');
-const  authMiddleware  = require('../middleware/authMiddleware');
+const authMiddleware = require('../middleware/authMiddleware');
 
 // ✅ Add to favorites
 router.post('/', authMiddleware, async (req, res) => {
   try {
     const { service } = req.body;
-    const client = req.user._id;
+    const client = req.user.id; // Changed from req.user._id to req.user.id
 
     console.log('Adding favorite - Client ID:', client, 'Service ID:', service);
     const existing = await Favorite.findOne({ client, service });
@@ -27,7 +26,7 @@ router.post('/', authMiddleware, async (req, res) => {
 // ✅ Get all favorites for the logged-in client
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const favorites = await Favorite.find({ client: req.user._id }).populate('service');
+    const favorites = await Favorite.find({ client: req.user.id }).populate('service'); // Changed to req.user.id
     res.json(favorites);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -39,7 +38,7 @@ router.delete('/:serviceId', authMiddleware, async (req, res) => {
   try {
     const { serviceId } = req.params;
     const deleted = await Favorite.findOneAndDelete({
-      client: req.user._id,
+      client: req.user.id, // Changed to req.user.id
       service: serviceId,
     });
 
