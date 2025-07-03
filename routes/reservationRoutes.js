@@ -100,6 +100,24 @@ router.get('/upcoming', authMiddleware, async (req, res) => {
   }
 });
 
+// ✅ Get past reservations for the authenticated client
+router.get('/past', authMiddleware, async (req, res) => {
+  try {
+    const now = new Date();
+    const pastReservations = await Reservation.find({
+      client: req.user.id,
+      date: { $lt: now },
+    })
+      .populate('service', 'name')
+      .populate('personnel', 'firstName lastName');
+    console.log('📅 Past reservations fetched:', pastReservations);
+    res.status(200).json(pastReservations);
+  } catch (error) {
+    console.error('❌ Error fetching past reservations:', error);
+    res.status(500).json({ message: 'Failed to fetch past reservations.' });
+  }
+});
+
 // ✅ Get reservations for a specific personnel
 router.get('/personnel/:id', authMiddleware, async (req, res) => {
   try {
