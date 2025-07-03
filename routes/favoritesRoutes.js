@@ -10,15 +10,17 @@ router.post('/', authMiddleware, async (req, res) => {
     const { service } = req.body;
     const client = req.user._id;
 
+    console.log('Adding favorite - Client ID:', client, 'Service ID:', service);
     const existing = await Favorite.findOne({ client, service });
     if (existing) return res.status(400).json({ message: 'Already in favorites' });
 
     const favorite = new Favorite({ client, service });
     await favorite.save();
+    console.log('Favorite added:', favorite);
     res.status(201).json(favorite);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
+    console.error('Error adding favorite:', err.message, err.stack);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
 
