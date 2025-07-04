@@ -43,7 +43,7 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
     })
       .populate('client', 'firstName lastName')
       .populate('personnel', 'firstName lastName')
-      .populate('service', 'name')
+      .populate('service', 'name price')
       .sort({ date: 1 });
 
     res.json({

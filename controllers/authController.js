@@ -4,8 +4,8 @@ const User = require('../models/User');
 
 // REGISTER USER
 const registerUser = async (req, res) => {
-  const { firstName, lastName, phone, email, password, role = 'client', profileImageUrl } = req.body;
-  const file = req.file; // This will be undefined since we're sending URL, not file
+  const { firstName, lastName, phone, email, password, role = 'client' } = req.body;
+  const file = req.file;
 
   if (!firstName || !lastName || !phone || !password) {
     return res.status(400).json({ message: "All fields are required" });
@@ -26,12 +26,11 @@ const registerUser = async (req, res) => {
       email,
       password: hashedPassword,
       role,
-      profileImageUrl: profileImageUrl || null, // Use the URL from req.body
+      profileImageUrl: file ? file.path : null, // ✅ Cloudinary URL
     });
 
     await newUser.save();
-    console.log('User registered with profileImageUrl:', profileImageUrl);
-
+console.log('Cloudinary file:', file);
     const token = jwt.sign(
       { id: newUser._id, role: newUser.role },
       process.env.JWT_SECRET,
@@ -52,6 +51,8 @@ const registerUser = async (req, res) => {
         isActive: newUser.isActive,
       },
     });
+    
+
   } catch (err) {
     console.error("❌ Registration error:", err);
     res.status(500).json({ message: "Server error", error: err.message });
