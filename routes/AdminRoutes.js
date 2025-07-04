@@ -27,7 +27,6 @@ router.patch("/users/:id/role", authorizeRoles("admin"), async (req, res) => {
 
 // Dashboard endpoint
 router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, res) => {
-
   try {
     const clientsCount = await User.countDocuments({ role: 'client' });
     const personnelCount = await User.countDocuments({ role: 'personnel' });
@@ -46,11 +45,25 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
       .populate('service', 'name price')
       .sort({ date: 1 });
 
+    // Calculate revenue for this month
+    const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
+    const monthEnd = new Date(todayStart.getFullYear(), todayStart.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const monthlyBookings = await Reservation.find({
+      date: { $gte: monthStart, $lte: monthEnd },
+    })
+      .populate('service', 'price');
+
+    const revenueThisMonth = monthlyBookings.reduce((total, booking) => {
+      return total + (parseFloat(booking.service?.price) || 0);
+    }, 0);
+
     res.json({
       clients: clientsCount,
       personnel: personnelCount,
       services: servicesCount,
       todaysBookings,
+      revenueThisMonth,
     });
   } catch (err) {
     console.error('Dashboard error:', err);
