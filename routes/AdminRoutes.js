@@ -102,10 +102,21 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
       },
     ]);
 
-    // Calculate low stock items
-    const lowStockItems = await Product.find({
-      quantity: { $lte: "$alertThreshold" }, // Note: This syntax is incorrect; see fix below
-    }).select('name quantity');
+    // Calculate low stock items using aggregation
+    const lowStockItems = await Product.aggregate([
+      {
+        $match: {
+          $expr: { $lte: ["$quantity", "$alertThreshold"] },
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          name: 1,
+          quantity: 1,
+        },
+      },
+    ]);
 
     res.json({
       clients: clientsCount,
