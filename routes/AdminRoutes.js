@@ -58,29 +58,51 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
       return total + (parseFloat(booking.service?.price) || 0);
     }, 0);
 
-    // Calculate booking trends for the past 7 days
-    const oneWeekAgo = new Date(todayStart);
-    oneWeekAgo.setDate(todayStart.getDate() - 6);
+    // Calculate booking trends for most booked services (past 30 days)
+    const oneMonthAgo = new Date(todayStart);
+    oneMonthAgo.setDate(todayStart.getDate() - 30);
 
     const bookingTrends = await Reservation.aggregate([
       {
         $match: {
-          date: { $gte: oneWeekAgo, $lte: todayEnd },
+          date: { $gte: oneMonthAgo, $lte: todayEnd },
+          service: { $exists: true, $ne: null }, // Ensure service exists
         },
       },
       {
         $group: {
-          _id: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
+          _id: "$service",
           count: { $sum: 1 },
         },
       },
       {
-        $sort: { "_id": 1 },
+        $lookup: {
+          from: "services", // Assuming the service collection is named "services"
+          localField: "_id",
+          foreignField: "_id",
+          as: "serviceDetails",
+        },
+      },
+      {
+        $unwind: "$serviceDetails",
+      },
+      {
+        $project: {
+          _id: 0,
+          name: "$serviceDetails.name",
+          count: 1,
+        },
+      },
+      {
+        $sort: { count: -1 }, // Sort by count descending
+      },
+      {
+        $limit: 5, // Top 5 most booked services
       },
     ]);
 
     // Format bookingTrends for frontend
-    const labels = bookingTrends.map(trend => trend._id);
+    const labels = bookingTrends.map(trend => trend.name);
     const data = bookingTrends.map(trend => trend.count);
 
     res.json({
