@@ -1,10 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const User = require("../models/User");
-const Service = require("../models/Service"); // ✅ Missing import
-const Reservation = require("../models/Reservation"); // ✅ Missing import
+const Service = require("../models/Service");
+const Reservation = require("../models/Reservation");
 const { authorizeRoles } = require("../middleware/role");
-const  authMiddleware  = require("../middleware/authMiddleware");
+const authMiddleware = require("../middleware/authMiddleware");
 
 // Get all users
 router.get("/users", authorizeRoles("admin"), async (req, res) => {
@@ -58,12 +58,38 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
       return total + (parseFloat(booking.service?.price) || 0);
     }, 0);
 
+    // Calculate booking trends for the past 7 days
+    const oneWeekAgo = new Date(todayStart);
+    oneWeekAgo.setDate(todayStart.getDate() - 6);
+
+    const bookingTrends = await Reservation.aggregate([
+      {
+        $match: {
+          date: { $gte: oneWeekAgo, $lte: todayEnd },
+        },
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $sort: { "_id": 1 },
+      },
+    ]);
+
+    // Format bookingTrends for frontend
+    const labels = bookingTrends.map(trend => trend._id);
+    const data = bookingTrends.map(trend => trend.count);
+
     res.json({
       clients: clientsCount,
       personnel: personnelCount,
       services: servicesCount,
       todaysBookings,
       revenueThisMonth,
+      bookingTrends: { labels, data },
     });
   } catch (err) {
     console.error('Dashboard error:', err);
