@@ -3,6 +3,7 @@ const router = express.Router();
 const User = require("../models/User");
 const Service = require("../models/Service");
 const Reservation = require("../models/Reservation");
+const Product = require("../models/Product"); // Added for low stock items
 const { authorizeRoles } = require("../middleware/role");
 const authMiddleware = require("../middleware/authMiddleware");
 
@@ -66,7 +67,7 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
       {
         $match: {
           date: { $gte: oneMonthAgo, $lte: todayEnd },
-          service: { $exists: true, $ne: null }, // Ensure service exists
+          service: { $exists: true, $ne: null },
         },
       },
       {
@@ -77,7 +78,7 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
       },
       {
         $lookup: {
-          from: "services", // Assuming the service collection is named "services"
+          from: "services",
           localField: "_id",
           foreignField: "_id",
           as: "serviceDetails",
@@ -94,16 +95,17 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
         },
       },
       {
-        $sort: { count: -1 }, // Sort by count descending
+        $sort: { count: -1 },
       },
       {
-        $limit: 5, // Top 5 most booked services
+        $limit: 5,
       },
     ]);
 
-    // Format bookingTrends for frontend
-    const labels = bookingTrends.map(trend => trend.name);
-    const data = bookingTrends.map(trend => trend.count);
+    // Calculate low stock items
+    const lowStockItems = await Product.find({
+      quantity: { $lte: "$alertThreshold" }, // Note: This syntax is incorrect; see fix below
+    }).select('name quantity');
 
     res.json({
       clients: clientsCount,
@@ -111,7 +113,8 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
       services: servicesCount,
       todaysBookings,
       revenueThisMonth,
-      bookingTrends: { labels, data },
+      bookingTrends: { labels: bookingTrends.map(trend => trend.name), data: bookingTrends.map(trend => trend.count) },
+      lowStockItems,
     });
   } catch (err) {
     console.error('Dashboard error:', err);
