@@ -39,7 +39,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
     const startDate = new Date(date);
     const totalDuration = services.reduce((total, service) => total + (service.duration || 30), 0);
-    const endDate = new Date(startDate.getTime() + totalDuration * 60000);
+    const endDate = new Date(startDate.getTime() + totalDuration * 59999);
 
     const conflictingReservation = await Reservation.findOne({
       personnel: personnelId,
