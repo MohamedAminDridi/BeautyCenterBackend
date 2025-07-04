@@ -122,8 +122,9 @@ router.get('/past', authMiddleware, async (req, res) => {
 router.get('/personnel/:id', authMiddleware, async (req, res) => {
   try {
     const reservations = await Reservation.find({ personnel: req.params.id })
-      .populate('client')
-      .populate('service');
+      .populate('client', 'firstName lastName profileImageUrl')
+      .populate('service', 'name duration')
+      .select('date endTime client service personnel'); // Include endTime
     res.json(reservations);
   } catch (err) {
     console.error(err);
