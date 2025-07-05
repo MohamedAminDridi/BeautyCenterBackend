@@ -152,73 +152,33 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Block a slot
+// ✅ Create a new blocked slot
 router.post('/block', authMiddleware, async (req, res) => {
   try {
     const { date, time, isMonthly } = req.body;
     const startDate = new Date(date);
     const [hours, minutes] = time.split(':').map(Number);
     startDate.setHours(hours, minutes, 0, 0);
-    const endDate = new Date(startDate.getTime() + 30 * 60000); // 30-minute slots
+    const endDate = new Date(startDate.getTime() + 30 * 60000);
 
-    // Check for conflicts with existing reservations or blocked slots
-    const conflictingReservation = await Reservation.findOne({
-      personnel: req.user.id,
-      $or: [
-        { date: { $lte: startDate }, endTime: { $gt: startDate } },
-        { date: { $lt: endDate }, endTime: { $gte: endDate } },
-      ],
-    });
-    const conflictingBlockedSlot = await BlockedSlot.findOne({
-      personnel: req.user.id,
-      $or: [
-        { date: { $lte: startDate }, endTime: { $gt: startDate } },
-        { date: { $lt: endDate }, endTime: { $gte: endDate } },
-      ],
-    });
-
-    if (conflictingReservation || conflictingBlockedSlot) {
-      return res.status(409).json({ message: 'This slot is already booked or blocked.' });
-    }
-
-    const newBlockedSlot = await BlockedSlot.create({
+    const isAdmin = req.user.role === 'admin';
+    const blockedSlot = new BlockedSlot({
       date: startDate,
       endTime: endDate,
-      personnel: req.user.id,
+      personnel: isAdmin ? null : req.user.id, // Null for admin, personnel ID for others
+      isAdminBlock: isAdmin, // Flag for admin blocks
       isMonthly,
     });
 
-    res.status(201).json(newBlockedSlot);
+    await blockedSlot.save();
+    res.status(201).json({ message: 'Slot blocked successfully', blockedSlot });
   } catch (error) {
     console.error('Error blocking slot:', error);
     res.status(500).json({ message: 'Server error. Could not block slot.', error: error.message });
   }
 });
 
-// ✅ Unblock a slot
-router.delete('/block', authMiddleware, async (req, res) => {
-  try {
-    const { date, time } = req.body;
-    const startDate = new Date(date);
-    const [hours, minutes] = time.split(':').map(Number);
-    startDate.setHours(hours, minutes, 0, 0);
-
-    const deleted = await BlockedSlot.findOneAndDelete({
-      date: startDate,
-      personnel: req.user.id,
-    });
-
-    if (!deleted) {
-      return res.status(404).json({ message: 'Slot not found or not blocked by you.' });
-    }
-
-    res.status(200).json({ message: 'Slot unblocked successfully.' });
-  } catch (error) {
-    console.error('Error unblocking slot:', error);
-    res.status(500).json({ message: 'Server error. Could not unblock slot.', error: error.message });
-  }
-});
-
+// ✅ Get blocked slots for a specific day
 router.get('/blocked/day', authMiddleware, async (req, res) => {
   try {
     const { date } = req.query;
@@ -230,16 +190,39 @@ router.get('/blocked/day', authMiddleware, async (req, res) => {
     const endDate = new Date(startDate);
     endDate.setHours(23, 59, 59, 999);
 
-    // Filter by personnel from the selected services (passed via query or context)
+    // Fetch all blocked slots for the day, including admin and personnel-specific
     const blockedSlots = await BlockedSlot.find({
       date: { $gte: startDate, $lte: endDate },
-      personnel: req.query.personnelId || req.user.id, // Use personnelId from query or fallback to user
-    }).select('date endTime');
+    }).select('date endTime personnel isAdminBlock');
 
     res.status(200).json(blockedSlots);
   } catch (error) {
     console.error('Error fetching blocked slots:', error);
     res.status(500).json({ message: 'Server error. Could not fetch blocked slots.', error: error.message });
+  }
+});
+
+// ✅ Delete a blocked slot
+router.delete('/block', authMiddleware, async (req, res) => {
+  try {
+    const { date, time } = req.body;
+    const startDate = new Date(date);
+    const [hours, minutes] = time.split(':').map(Number);
+    startDate.setHours(hours, minutes, 0, 0);
+
+    const blockedSlot = await BlockedSlot.findOneAndDelete({
+      date: startDate,
+      personnel: req.user.role === 'admin' ? null : req.user.id,
+    });
+
+    if (!blockedSlot) {
+      return res.status(404).json({ message: 'Blocked slot not found or unauthorized.' });
+    }
+
+    res.status(200).json({ message: 'Slot unblocked successfully' });
+  } catch (error) {
+    console.error('Error unblocking slot:', error);
+    res.status(500).json({ message: 'Server error. Could not unblock slot.', error: error.message });
   }
 });
 
