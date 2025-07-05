@@ -146,4 +146,56 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
+router.post('/block', authMiddleware, async (req, res) => {
+  try {
+    const { date, time, isMonthly } = req.body;
+    const startDate = new Date(date);
+    const [hours, minutes] = time.split(':').map(Number);
+    startDate.setHours(hours, minutes, 0, 0);
+    const endDate = new Date(startDate.getTime() + 30 * 60000); // 30-minute slots
+
+    const newReservation = await Reservation.create({
+      date: startDate,
+      endTime: endDate,
+      personnel: req.user.id, // Admin as personnel for blocked slots
+      blocked: true,
+    });
+
+    if (isMonthly) {
+      // Logic to block for the entire month (e.g., create multiple records)
+      // This is a placeholder; implement based on your needs
+      console.log('Monthly blocking not fully implemented yet');
+    }
+
+    res.status(201).json(newReservation);
+  } catch (error) {
+    console.error('Error blocking slot:', error);
+    res.status(500).json({ message: 'Server error. Could not block slot.' });
+  }
+});
+
+// ✅ Unblock a slot
+router.delete('/block', authMiddleware, async (req, res) => {
+  try {
+    const { date, time } = req.body;
+    const startDate = new Date(date);
+    const [hours, minutes] = time.split(':').map(Number);
+    startDate.setHours(hours, minutes, 0, 0);
+
+    const deleted = await Reservation.findOneAndDelete({
+      date: startDate,
+      blocked: true,
+    });
+
+    if (!deleted) {
+      return res.status(404).json({ message: 'Slot not found or not blocked.' });
+    }
+
+    res.status(200).json({ message: 'Slot unblocked successfully.' });
+  } catch (error) {
+    console.error('Error unblocking slot:', error);
+    res.status(500).json({ message: 'Server error. Could not unblock slot.' });
+  }
+});
+
 module.exports = router;

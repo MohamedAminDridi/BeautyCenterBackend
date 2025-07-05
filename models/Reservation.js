@@ -6,6 +6,7 @@ const reservationSchema = new mongoose.Schema({
   personnel: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   date: { type: Date, required: true },
   endTime: { type: Date, required: true }, // 🟢 NEW: end time of reservation
+  blocked: { type: Boolean, default: false },
 });
 
 reservationSchema.pre('save', async function (next) {
