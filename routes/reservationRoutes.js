@@ -219,7 +219,6 @@ router.delete('/block', authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Get blocked slots for a specific day
 router.get('/blocked/day', authMiddleware, async (req, res) => {
   try {
     const { date } = req.query;
@@ -231,9 +230,10 @@ router.get('/blocked/day', authMiddleware, async (req, res) => {
     const endDate = new Date(startDate);
     endDate.setHours(23, 59, 59, 999);
 
+    // Filter by personnel from the selected services (passed via query or context)
     const blockedSlots = await BlockedSlot.find({
       date: { $gte: startDate, $lte: endDate },
-      personnel: req.user.id,
+      personnel: req.query.personnelId || req.user.id, // Use personnelId from query or fallback to user
     }).select('date endTime');
 
     res.status(200).json(blockedSlots);
