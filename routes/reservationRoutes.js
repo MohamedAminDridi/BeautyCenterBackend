@@ -127,7 +127,16 @@ router.get('/past', authMiddleware, async (req, res) => {
 // ✅ Get reservations for a specific personnel
 router.get('/personnel/:id', authMiddleware, async (req, res) => {
   try {
-    const reservations = await Reservation.find({ personnel: req.params.id })
+    const { date } = req.query;
+    let query = { personnel: req.params.id };
+    if (date) {
+      const startDate = new Date(date);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(startDate);
+      endDate.setHours(23, 59, 59, 999);
+      query.date = { $gte: startDate, $lte: endDate };
+    }
+    const reservations = await Reservation.find(query)
       .populate('client', 'firstName lastName profileImageUrl')
       .populate('service', 'name duration')
       .select('date endTime client service personnel');
