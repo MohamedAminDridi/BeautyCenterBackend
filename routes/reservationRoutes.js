@@ -3,6 +3,7 @@ const router = express.Router();
 const Reservation = require('../models/Reservation');
 const Service = require('../models/Service');
 const User = require('../models/User');
+const BlockedSlot = require('../models/BlockedSlot'); // New import
 const authMiddleware = require('../middleware/authMiddleware');
 const { Expo } = require('expo-server-sdk');
 const expo = new Expo();
@@ -19,11 +20,9 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Missing or invalid service(s) or date.' });
     }
 
-    console.log('Service IDs to find:', serviceIds);
     const services = await Service.find({ _id: { $in: serviceIds } }).populate('personnel');
     console.log('Found services:', services);
     if (services.length !== serviceIds.length) {
-      console.log('Mismatch: Expected', serviceIds.length, 'services, found', services.length);
       return res.status(404).json({ message: 'One or more services not found.' });
     }
 
@@ -39,8 +38,9 @@ router.post('/', authMiddleware, async (req, res) => {
 
     const startDate = new Date(date);
     const totalDuration = services.reduce((total, service) => total + (service.duration || 30), 0);
-    const endDate = new Date(startDate.getTime() + totalDuration * 59999);
+    const endDate = new Date(startDate.getTime() + totalDuration * 60000);
 
+    // Check for conflicts with both reservations and blocked slots
     const conflictingReservation = await Reservation.findOne({
       personnel: personnelId,
       $or: [
@@ -48,12 +48,18 @@ router.post('/', authMiddleware, async (req, res) => {
         { date: { $lt: endDate }, endTime: { $gte: endDate } },
       ],
     });
+    const conflictingBlockedSlot = await BlockedSlot.findOne({
+      personnel: personnelId,
+      $or: [
+        { date: { $lte: startDate }, endTime: { $gt: startDate } },
+        { date: { $lt: endDate }, endTime: { $gte: endDate } },
+      ],
+    });
 
-    if (conflictingReservation) {
-      return res.status(409).json({ message: 'This slot is already booked.' });
+    if (conflictingReservation || conflictingBlockedSlot) {
+      return res.status(409).json({ message: 'This slot is already booked or blocked.' });
     }
 
-    console.log('Creating reservation with clientId:', clientId);
     const newReservation = await Reservation.create({
       client: clientId,
       service: serviceIds,
@@ -78,7 +84,7 @@ router.post('/', authMiddleware, async (req, res) => {
     res.status(201).json(newReservation);
   } catch (error) {
     console.error('❌ Server error during reservation:', error);
-    res.status(500).json({ message: 'Server error. Could not create reservation.' });
+    res.status(500).json({ message: 'Server error. Could not create reservation.', error: error.message });
   }
 });
 
@@ -124,7 +130,7 @@ router.get('/personnel/:id', authMiddleware, async (req, res) => {
     const reservations = await Reservation.find({ personnel: req.params.id })
       .populate('client', 'firstName lastName profileImageUrl')
       .populate('service', 'name duration')
-      .select('date endTime client service personnel'); // Include endTime
+      .select('date endTime client service personnel');
     res.json(reservations);
   } catch (err) {
     console.error(err);
@@ -146,6 +152,7 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
+// ✅ Block a slot
 router.post('/block', authMiddleware, async (req, res) => {
   try {
     const { date, time, isMonthly } = req.body;
@@ -154,23 +161,37 @@ router.post('/block', authMiddleware, async (req, res) => {
     startDate.setHours(hours, minutes, 0, 0);
     const endDate = new Date(startDate.getTime() + 30 * 60000); // 30-minute slots
 
-    const newReservation = await Reservation.create({
-      date: startDate,
-      endTime: endDate,
-      personnel: req.user.id, // Admin as personnel for blocked slots
-      blocked: true,
+    // Check for conflicts with existing reservations or blocked slots
+    const conflictingReservation = await Reservation.findOne({
+      personnel: req.user.id,
+      $or: [
+        { date: { $lte: startDate }, endTime: { $gt: startDate } },
+        { date: { $lt: endDate }, endTime: { $gte: endDate } },
+      ],
+    });
+    const conflictingBlockedSlot = await BlockedSlot.findOne({
+      personnel: req.user.id,
+      $or: [
+        { date: { $lte: startDate }, endTime: { $gt: startDate } },
+        { date: { $lt: endDate }, endTime: { $gte: endDate } },
+      ],
     });
 
-    if (isMonthly) {
-      // Logic to block for the entire month (e.g., create multiple records)
-      // This is a placeholder; implement based on your needs
-      console.log('Monthly blocking not fully implemented yet');
+    if (conflictingReservation || conflictingBlockedSlot) {
+      return res.status(409).json({ message: 'This slot is already booked or blocked.' });
     }
 
-    res.status(201).json(newReservation);
+    const newBlockedSlot = await BlockedSlot.create({
+      date: startDate,
+      endTime: endDate,
+      personnel: req.user.id,
+      isMonthly,
+    });
+
+    res.status(201).json(newBlockedSlot);
   } catch (error) {
     console.error('Error blocking slot:', error);
-    res.status(500).json({ message: 'Server error. Could not block slot.' });
+    res.status(500).json({ message: 'Server error. Could not block slot.', error: error.message });
   }
 });
 
@@ -182,19 +203,43 @@ router.delete('/block', authMiddleware, async (req, res) => {
     const [hours, minutes] = time.split(':').map(Number);
     startDate.setHours(hours, minutes, 0, 0);
 
-    const deleted = await Reservation.findOneAndDelete({
+    const deleted = await BlockedSlot.findOneAndDelete({
       date: startDate,
-      blocked: true,
+      personnel: req.user.id,
     });
 
     if (!deleted) {
-      return res.status(404).json({ message: 'Slot not found or not blocked.' });
+      return res.status(404).json({ message: 'Slot not found or not blocked by you.' });
     }
 
     res.status(200).json({ message: 'Slot unblocked successfully.' });
   } catch (error) {
     console.error('Error unblocking slot:', error);
-    res.status(500).json({ message: 'Server error. Could not unblock slot.' });
+    res.status(500).json({ message: 'Server error. Could not unblock slot.', error: error.message });
+  }
+});
+
+// ✅ Get blocked slots for a specific day
+router.get('/blocked/day', authMiddleware, async (req, res) => {
+  try {
+    const { date } = req.query;
+    if (!date || isNaN(new Date(date))) {
+      return res.status(400).json({ message: 'Invalid date provided.' });
+    }
+    const startDate = new Date(date);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(startDate);
+    endDate.setHours(23, 59, 59, 999);
+
+    const blockedSlots = await BlockedSlot.find({
+      date: { $gte: startDate, $lte: endDate },
+      personnel: req.user.id,
+    }).select('date endTime');
+
+    res.status(200).json(blockedSlots);
+  } catch (error) {
+    console.error('Error fetching blocked slots:', error);
+    res.status(500).json({ message: 'Server error. Could not fetch blocked slots.', error: error.message });
   }
 });
 
