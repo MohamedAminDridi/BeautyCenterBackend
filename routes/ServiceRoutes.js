@@ -1,23 +1,21 @@
 const express = require('express');
 const router = express.Router();
 const Service = require('../models/Service');
-const upload = require('../middleware/upload');
-const authMiddleware = require('../middleware/auth'); // Add auth middleware
+const authMiddleware = require('../middleware/authMiddleware');
 
 // CREATE service
-router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
+router.post('/', authMiddleware, async (req, res) => { // Ajout de authMiddleware
   try {
-    const { name, category, description, price, duration, personnel, barbershop } = req.body;
+    const { name, category, description, price, duration, personnel, imageUrl } = req.body;
 
     const newService = new Service({
       name,
       category,
       description,
-      price,
-      duration,
+      price: parseFloat(price),
+      duration: parseInt(duration),
       personnel: personnel ? personnel.split(',') : [],
-      barbershop, // Required field from serviceSchema
-      imageUrl: req.file ? `/uploads/${req.file.filename}` : '',
+      imageUrl: imageUrl || '',
     });
 
     const saved = await newService.save();
@@ -27,63 +25,58 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
   }
 });
 
-// READ all services with optional barbershop filter
-router.get('/', authMiddleware, async (req, res) => {
+// READ all services
+router.get('/', authMiddleware, async (req, res) => { // Ajout de authMiddleware
   try {
-    const { barbershopId } = req.query;
-    const query = barbershopId ? { barbershop: barbershopId } : {};
-    const services = await Service.find(query).populate('personnel', 'firstName lastName profileImageUrl');
+    const services = await Service.find().populate('personnel', 'firstName lastName profileImageUrl');
+    console.log('🛒 Services fetched:', services); // Ajout de log
     res.json(services);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch services', detail: err.message });
+    res.status(500).json({ error: 'Failed to fetch services' });
   }
 });
 
 // READ single service
-router.get('/:id', authMiddleware, async (req, res) => {
+router.get('/:id', authMiddleware, async (req, res) => { // Ajout de authMiddleware
   try {
     const service = await Service.findById(req.params.id).populate('personnel', 'firstName lastName');
     if (!service) return res.status(404).json({ error: 'Service not found' });
     res.json(service);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch service', detail: err.message });
+    res.status(500).json({ error: 'Failed to fetch service' });
   }
 });
 
 // UPDATE service
-router.put('/:id', authMiddleware, upload.single('image'), async (req, res) => {
+router.put('/:id', authMiddleware, async (req, res) => { // Ajout de authMiddleware
   try {
-    const { name, category, description, price, duration, personnel, barbershop } = req.body;
     const update = {
-      name,
-      category,
-      description,
-      price,
-      duration,
-      personnel: personnel ? personnel.split(',') : [],
-      barbershop,
+      name: req.body.name,
+      category: req.body.category,
+      description: req.body.description,
+      price: parseFloat(req.body.price),
+      duration: parseInt(req.body.duration),
+      personnel: req.body.personnel ? req.body.personnel.split(',') : [],
     };
 
-    if (req.file) {
-      update.imageUrl = `/uploads/${req.file.filename}`;
+    if (req.body.imageUrl) {
+      update.imageUrl = req.body.imageUrl;
     }
 
     const updated = await Service.findByIdAndUpdate(req.params.id, update, { new: true });
-    if (!updated) return res.status(404).json({ error: 'Service not found' });
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to update service', detail: err.message });
+    res.status(500).json({ error: 'Failed to update service' });
   }
 });
 
 // DELETE service
-router.delete('/:id', authMiddleware, async (req, res) => {
+router.delete('/:id', authMiddleware, async (req, res) => { // Ajout de authMiddleware
   try {
-    const service = await Service.findByIdAndDelete(req.params.id);
-    if (!service) return res.status(404).json({ error: 'Service not found' });
+    await Service.findByIdAndDelete(req.params.id);
     res.json({ message: 'Service deleted' });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to delete service', detail: err.message });
+    res.status(500).json({ error: 'Failed to delete service' });
   }
 });
 

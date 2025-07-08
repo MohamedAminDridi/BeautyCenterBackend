@@ -162,23 +162,29 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // ✅ Create a new blocked slot
-// routes/reservations.js
-router.post('/block', async (req, res) => {
-  const { date, time, isMonthly, isAdminBlock, personnel } = req.body;
-  const [hours, minutes] = time.split(':').map(Number);
-  const startDate = new Date(date);
-  startDate.setHours(hours, minutes, 0, 0);
-  const endDate = new Date(startDate.getTime() + 30 * 60000);
+router.post('/block', authMiddleware, async (req, res) => {
+  try {
+    const { date, time, isMonthly } = req.body;
+    const startDate = new Date(date);
+    const [hours, minutes] = time.split(':').map(Number);
+    startDate.setHours(hours, minutes, 0, 0);
+    const endDate = new Date(startDate.getTime() + 30 * 60000);
 
-  const newBlock = new ReservationBlock({
-    date: startDate,
-    endDate,
-    isMonthly,
-    isAdminBlock,
-    personnel,
-  });
-  await newBlock.save();
-  res.status(201).json(newBlock);
+    const isAdmin = req.user.role === 'admin';
+    const blockedSlot = new BlockedSlot({
+      date: startDate,
+      endTime: endDate,
+      personnel: isAdmin ? null : req.user.id, // Null for admin, personnel ID for others
+      isAdminBlock: isAdmin, // Flag for admin blocks
+      isMonthly,
+    });
+
+    await blockedSlot.save();
+    res.status(201).json({ message: 'Slot blocked successfully', blockedSlot });
+  } catch (error) {
+    console.error('Error blocking slot:', error);
+    res.status(500).json({ message: 'Server error. Could not block slot.', error: error.message });
+  }
 });
 
 // ✅ Get blocked slots for a specific day
