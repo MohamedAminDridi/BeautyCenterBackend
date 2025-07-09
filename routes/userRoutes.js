@@ -4,8 +4,11 @@ const User = require('../models/User');
 const path = require('path');
 const multer = require('multer');
 const authMiddleware = require('../middleware/authMiddleware');
+const cloudinary = require('cloudinary').v2; // Add Cloudinary
 
-// Setup multer
+
+
+// Setup multer for temporary storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'uploads/'),
   filename: (req, file, cb) => {
@@ -28,11 +31,22 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /me (authenticated user data)
+router.get('/me', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('firstName lastName role barbershop profileImageUrl');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error', detail: err.message });
+  }
+});
+
 // PUT update role
 router.put('/users/:id/role', async (req, res) => {
   const { id } = req.params;
   const { role } = req.body;
-  if (!['client', 'personnel'].includes(role)) {
+  if (!['client', 'personnel', 'owner'].includes(role)) {
     return res.status(400).json({ message: 'Invalid role value' });
   }
   try {
@@ -93,11 +107,11 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
-//Update
+
+// PUT /me (update authenticated user with image)
 router.put('/me', authMiddleware, upload.single('profileImage'), async (req, res) => {
   try {
-    const userId = req.user.id || req.user.userId; // 🔥 SAFELY extract user ID
-
+    const userId = req.user._id; // Use _id directly from authMiddleware
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized: no user ID in token' });
     }
@@ -105,7 +119,8 @@ router.put('/me', authMiddleware, upload.single('profileImage'), async (req, res
     const updates = req.body;
 
     if (req.file) {
-      updates.profileImageUrl = `/uploads/${req.file.filename}`;
+      const result = await cloudinary.uploader.upload(req.file.path);
+      updates.profileImageUrl = result.secure_url; // Use Cloudinary URL
     }
 
     const updatedUser = await User.findByIdAndUpdate(userId, updates, { new: true });
@@ -129,6 +144,7 @@ router.get('/personnel', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch personnel' });
   }
 });
+
 router.put('/:id/push-token', authMiddleware, async (req, res) => {
   const { id } = req.params;
   const { pushToken } = req.body;
