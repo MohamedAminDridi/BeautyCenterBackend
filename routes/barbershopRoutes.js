@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Barbershop = require('../models/barbershop');
-const Service = require('../models/service');
+const Service = require('../models/Service');
 const authMiddleware = require('../middleware/authMiddleware');
 
 // Get unique barbershop categories
@@ -67,7 +67,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Get services by barbershop ID
-router.get('/services/barbershop/:id', authMiddleware, async (req, res) => {
+router.get('/services/barbershop/:id', async (req, res) => {
   try {
     const services = await Service.find({ barbershop: req.params.id })
       .select('_id name description price duration loyaltyPoints imageUrl')
