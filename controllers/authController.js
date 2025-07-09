@@ -3,13 +3,9 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Barbershop = require('../models/barbershop');
 const PersonnelApplication = require('../models/PersonnelApplication');
-const { registerPersonnel } = require('../controllers/personnelController');
 
-// REGISTER USER
 const registerUser = async (req, res) => {
-  const { firstName, lastName, phone, email, password, role, barbershopInfo, servicesOffered, bio } = req.body;
-  const file = req.file; // Profile image or logo
-  const documents = req.files?.documents || []; // For barbershop documents
+  const { firstName, lastName, phone, email, password, role, barbershopInfo, servicesOffered, bio, profileImageUrl, documents } = req.body;
 
   if (!firstName || !lastName || !phone || !email || !password) {
     return res.status(400).json({ message: 'All required fields must be provided' });
@@ -31,15 +27,15 @@ const registerUser = async (req, res) => {
       email,
       password: hashedPassword,
       role: role || 'client',
-      profileImageUrl: file ? file.path : null,
+      profileImageUrl: profileImageUrl || null, // Use Cloudinary URL from frontend
       status,
     });
 
     await newUser.save();
 
     if (role === 'owner' && barbershopInfo) {
-let barbershopData = typeof barbershopInfo === 'string' ? JSON.parse(barbershopInfo) : barbershopInfo;
-const { name, description, address, latitude, longitude, category } = barbershopData;
+      let barbershopData = typeof barbershopInfo === 'string' ? JSON.parse(barbershopInfo) : barbershopInfo;
+      const { name, description, address, latitude, longitude, category } = barbershopData;
       if (!name || !address || !latitude || !longitude || !category) {
         return res.status(400).json({ message: 'All barbershop fields are required' });
       }
@@ -48,9 +44,9 @@ const { name, description, address, latitude, longitude, category } = barbershop
         name,
         description,
         category,
-        location: { address, coordinates: { latitude, longitude } },
-        logoUrl: file ? file.path : null,
-        documents: documents.map(doc => doc.path),
+        location: { address, coordinates: { latitude: parseFloat(latitude), longitude: parseFloat(longitude) } },
+        logoUrl: profileImageUrl || null, // Use Cloudinary URL from frontend
+        documents: documents || [], // Use document URLs from frontend
         owner: newUser._id,
         status: 'pending',
       });
@@ -59,8 +55,10 @@ const { name, description, address, latitude, longitude, category } = barbershop
       // TODO: Notify admin (e.g., via email or push notification)
     }
 
-    if (role === 'personnel' && barbershopInfo?.barbershopId) {
-      const barbershop = await Barbershop.findById(barbershopInfo.barbershopId);
+    if (role === 'personnel' && barbershopInfo) {
+      let barbershopData = typeof barbershopInfo === 'string' ? JSON.parse(barbershopInfo) : barbershopInfo;
+      const { barbershopId } = barbershopData;
+      const barbershop = await Barbershop.findById(barbershopId);
       if (!barbershop) {
         return res.status(400).json({ message: 'Barbershop not found' });
       }
@@ -69,8 +67,8 @@ const { name, description, address, latitude, longitude, category } = barbershop
         personnel: newUser._id,
         barbershop: barbershop._id,
         bio,
-        servicesOffered,
-        photoUrl: file ? file.path : null,
+        servicesOffered: servicesOffered || [],
+        photoUrl: profileImageUrl || null, // Use Cloudinary URL from frontend
         status: 'pending',
       });
 
@@ -107,7 +105,7 @@ const { name, description, address, latitude, longitude, category } = barbershop
   }
 };
 
-// LOGIN USER
+// LOGIN USER, APPROVE BARBERSHOP, APPROVE PERSONNEL (unchanged)
 const loginUser = async (req, res) => {
   const { phone, password } = req.body;
 
@@ -161,9 +159,8 @@ const loginUser = async (req, res) => {
   }
 };
 
-// ADMIN APPROVE/REJECT BARBERSHOP
 const approveBarbershop = async (req, res) => {
-  const { barbershopId, action } = req.body; // action: 'approve' or 'reject'
+  const { barbershopId, action } = req.body;
   if (req.user.role !== 'admin') {
     return res.status(403).json({ message: 'Admin access required' });
   }
@@ -181,7 +178,6 @@ const approveBarbershop = async (req, res) => {
     if (owner) {
       owner.status = action === 'approve' ? 'approved' : 'rejected';
       await owner.save();
-      // TODO: Notify owner
     }
 
     res.status(200).json({ message: `Barbershop ${action}d successfully` });
@@ -191,9 +187,8 @@ const approveBarbershop = async (req, res) => {
   }
 };
 
-// OWNER APPROVE/REJECT PERSONNEL
 const approvePersonnel = async (req, res) => {
-  const { applicationId, action } = req.body; // action: 'approve' or 'reject'
+  const { applicationId, action } = req.body;
   if (req.user.role !== 'owner') {
     return res.status(403).json({ message: 'Owner access required' });
   }
@@ -215,7 +210,6 @@ const approvePersonnel = async (req, res) => {
     if (personnel) {
       personnel.status = action === 'approve' ? 'approved' : 'rejected';
       await personnel.save();
-      // TODO: Notify personnel
     }
 
     res.status(200).json({ message: `Personnel ${action}d successfully` });
