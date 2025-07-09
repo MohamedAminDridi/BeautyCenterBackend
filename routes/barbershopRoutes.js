@@ -20,20 +20,31 @@ router.get('/', async (req, res) => {
     const { category } = req.query;
     const query = category ? { category, status: 'approved' } : { status: 'approved' };
     const barbershops = await Barbershop.find(query)
-      .select('name description location logoUrl');
+      .select('_id name description location logoUrl');
     res.json(barbershops);
   } catch (error) {
     console.error('Error fetching barbershops:', error);
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
+
+// Get public barbershops for map
 router.get('/public', async (req, res) => {
   try {
-    const barbershops = await Barbershop.find({ status: 'approved' }).select('name _id');
+    const barbershops = await Barbershop.find({ status: 'approved' })
+      .select('_id name description location.coordinates logoUrl')
+      .lean();
+    console.log('Returning public barbershops:', barbershops.map(shop => ({
+      _id: shop._id,
+      name: shop.name,
+      logoUrl: shop.logoUrl,
+      coordinates: shop.location?.coordinates,
+    }))); // Debug
     res.json(barbershops);
   } catch (error) {
-    console.error('Error fetching barbershops:', error);
+    console.error('Error fetching public barbershops:', error);
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
+
 module.exports = router;
