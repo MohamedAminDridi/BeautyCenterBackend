@@ -16,8 +16,10 @@ const barbershopSchema = new mongoose.Schema({
     }
   },
   logoUrl: String,
+  documents: [{ type: String }], // Array of document URLs
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   services: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Service' }],
+  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
   createdAt: { type: Date, default: Date.now }
 });
 
