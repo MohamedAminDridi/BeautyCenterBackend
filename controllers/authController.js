@@ -38,7 +38,8 @@ const registerUser = async (req, res) => {
     await newUser.save();
 
     if (role === 'owner' && barbershopInfo) {
-      const { name, description, address, latitude, longitude, category } = barbershopInfo;
+let barbershopData = typeof barbershopInfo === 'string' ? JSON.parse(barbershopInfo) : barbershopInfo;
+const { name, description, address, latitude, longitude, category } = barbershopData;
       if (!name || !address || !latitude || !longitude || !category) {
         return res.status(400).json({ message: 'All barbershop fields are required' });
       }
