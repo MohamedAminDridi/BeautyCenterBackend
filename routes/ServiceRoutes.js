@@ -4,12 +4,17 @@ const Service = require('../models/Service');
 const authMiddleware = require('../middleware/authMiddleware');
 
 // CREATE service
-router.post('/', authMiddleware, async (req, res) => {
+router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
   try {
-    const { name, category, description, price, duration, personnel, imageUrl, barbershop } = req.body;
+    const { name, category, description, price, duration, loyaltyPoints, personnel, barbershop } = req.body;
 
-    if (!barbershop) {
-      return res.status(400).json({ error: 'Barbershop ID is required' });
+    if (!barbershop) return res.status(400).json({ error: 'Barbershop ID is required' });
+    if (loyaltyPoints === undefined) return res.status(400).json({ error: 'Loyalty points are required' });
+
+    let imageUrl = '';
+    if (req.file) {
+      const result = await cloudinary.uploader.upload(req.file.path);
+      imageUrl = result.secure_url;
     }
 
     const newService = new Service({
@@ -18,8 +23,9 @@ router.post('/', authMiddleware, async (req, res) => {
       description,
       price: parseFloat(price),
       duration: parseInt(duration),
+      loyaltyPoints: parseInt(loyaltyPoints),
       personnel: personnel ? personnel.split(',').map(id => id.trim()) : [],
-      imageUrl: imageUrl || '',
+      imageUrl,
       barbershop,
     });
 
@@ -67,10 +73,13 @@ router.get('/:id', authMiddleware, async (req, res) => {
 // UPDATE service
 router.put('/:id', authMiddleware, async (req, res) => {
   try {
-    const { name, category, description, price, duration, personnel, imageUrl, barbershop } = req.body;
+    const { name, category, description, price, duration, loyaltyPoints, personnel, imageUrl, barbershop } = req.body;
 
     if (!barbershop) {
       return res.status(400).json({ error: 'Barbershop ID is required' });
+    }
+    if (loyaltyPoints === undefined) {
+      return res.status(400).json({ error: 'Loyalty points are required' });
     }
 
     const update = {
@@ -79,6 +88,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
       description,
       price: parseFloat(price),
       duration: parseInt(duration),
+      loyaltyPoints: parseInt(loyaltyPoints),
       personnel: personnel ? personnel.split(',').map(id => id.trim()) : [],
       barbershop,
     };
