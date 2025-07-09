@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Barbershop = require('../models/barbershop');
-const authMiddleware = require('../middleware/auth');
+const authMiddleware = require('../middleware/authMiddleware');
 
 // Get unique barbershop categories
 router.get('/categories', authMiddleware, async (req, res) => {
