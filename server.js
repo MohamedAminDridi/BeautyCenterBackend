@@ -11,6 +11,7 @@ const favoriteRoutes = require('./routes/favoritesRoutes');
 const reservationRoutes = require('./routes/reservationRoutes');
 const adminRoutes = require('./routes/AdminRoutes'); // adjust path if needed
 const loyaltyRoutes = require('./routes/loyaltyRoutes');
+const ownerRoutes = require('./routes/ownerRoutes'); // <-- new import here
 
 require('dotenv').config();
 
@@ -29,6 +30,7 @@ app.use('/api/favorites', favoriteRoutes);
 app.use('/api/reservations', reservationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
+app.use('/api/owner', ownerRoutes);  // <-- register owner routes here
 
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/test', {

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload'); // path to multer setup
+const { registerOwner } = require('../controllers/ownerController'); // 👈 New controller
 
 const { registerUser, loginUser } = require('../controllers/authController');
 // const storage = multer.diskStorage({
@@ -10,5 +11,7 @@ const { registerUser, loginUser } = require('../controllers/authController');
 // const upload = multer({ storage });
 router.post('/login', loginUser);
 router.post('/register', upload.single('profileImage'), registerUser);
+router.post('/register-owner', registerOwner);
+router.post('/register-personnel', registerPersonnel);
 
 module.exports = router;

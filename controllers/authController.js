@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Barbershop = require('../models/barbershop');
 const PersonnelApplication = require('../models/PersonnelApplication');
+const { registerPersonnel } = require('../controllers/personnelController');
 
 // REGISTER USER
 const registerUser = async (req, res) => {

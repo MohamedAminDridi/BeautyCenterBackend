@@ -6,6 +6,7 @@ const Reservation = require("../models/Reservation");
 const Product = require("../models/Product"); // Added for low stock items
 const { authorizeRoles } = require("../middleware/role");
 const authMiddleware = require("../middleware/authMiddleware");
+const Barbershop = require('../models/barbershop');
 
 // Get all users
 router.get("/users", authorizeRoles("admin"), async (req, res) => {
@@ -131,6 +132,47 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
     console.error('Dashboard error:', err);
     res.status(500).json({ message: 'Failed to load dashboard data.' });
   }
+});
+router.patch('/approve-owner/:userId', async (req, res) => {
+  await User.findByIdAndUpdate(req.params.userId, { status: 'approved' });
+  res.json({ message: 'Owner approved' });
+});
+
+router.patch('/approve-barbershop/:barbershopId', async (req, res) => {
+  await Barbershop.findByIdAndUpdate(req.params.barbershopId, { status: 'approved' });
+  res.json({ message: 'Barbershop approved' });
+});
+// GET /admin/pending-approvals
+router.get('/pending-approvals',
+  authMiddleware,
+  authorizeRoles('admin'),
+  async (req, res) => {
+    try {
+      const pendingOwners = await User.find({ role: 'owner', status: 'pending' })
+        .select('firstName lastName phone email');
+      
+      const pendingShops = await Barbershop.find({ status: 'pending' })
+        .populate('owner', 'firstName lastName phone');
+
+      res.json({ pendingOwners, pendingShops });
+    } catch (error) {
+      console.error('Pending approvals error:', error);
+      res.status(500).json({ message: 'Error fetching pending approvals' });
+    }
+});
+router.patch('/reject-owner/:userId',
+  authMiddleware,
+  authorizeRoles('admin'),
+  async (req, res) => {
+    await User.findByIdAndUpdate(req.params.userId, { status: 'rejected' });
+    res.json({ message: 'Owner rejected' });
+});
+router.patch('/reject-barbershop/:barbershopId',
+  authMiddleware,
+  authorizeRoles('admin'),
+  async (req, res) => {
+    await Barbershop.findByIdAndUpdate(req.params.barbershopId, { status: 'rejected' });
+    res.json({ message: 'Barbershop rejected' });
 });
 
 module.exports = router;
