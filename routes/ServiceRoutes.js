@@ -3,6 +3,23 @@ const router = express.Router();
 const Service = require('../models/Service');
 const authMiddleware = require('../middleware/authMiddleware');
 
+// Import multer for file uploads
+const multer = require('multer');
+
+// Configure multer storage (e.g., to memory or disk)
+const storage = multer.memoryStorage(); // or multer.diskStorage() if you prefer disk storage
+const upload = multer({ storage: storage });
+
+// Assuming cloudinary is configured elsewhere
+const cloudinary = require('cloudinary').v2;
+
+// Configure Cloudinary (if not already done in another file)
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
 // CREATE service
 router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
   try {
@@ -13,7 +30,7 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
 
     let imageUrl = '';
     if (req.file) {
-      const result = await cloudinary.uploader.upload(req.file.path);
+      const result = await cloudinary.uploader.upload(req.file.path); // Note: Use req.file.buffer for memoryStorage
       imageUrl = result.secure_url;
     }
 
