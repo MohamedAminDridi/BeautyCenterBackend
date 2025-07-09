@@ -2,8 +2,9 @@ const express = require('express');
 const router = express.Router();
 const Barbershop = require('../models/barbershop');
 const Service = require('../models/Service');
+const Reservation = require('../models/Reservation');
 const authMiddleware = require('../middleware/authMiddleware');
-const Reservation = require('../models/Reservation'); // Add Reservation model
+
 // Get unique barbershop categories
 router.get('/categories', authMiddleware, async (req, res) => {
   try {
@@ -14,6 +15,8 @@ router.get('/categories', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
+
+// Get services by barbershop ID
 router.get('/:id/services', authMiddleware, async (req, res) => {
   try {
     const services = await Service.find({ barbershop: req.params.id })
@@ -27,21 +30,41 @@ router.get('/:id/services', authMiddleware, async (req, res) => {
   }
 });
 
+// Get past reservations for a specific barbershop
 router.get('/:id/reservations/past', authMiddleware, async (req, res) => {
   try {
     const now = new Date();
     const pastReservations = await Reservation.find({
-      barbershop: req.params.id, // Assuming Reservation model has a barbershop field
+      barbershop: req.params.id,
       date: { $lt: now },
     })
       .populate('service', 'name')
       .populate('personnel', 'firstName lastName')
-      .populate('client', 'firstName lastName'); // Optional, depending on your schema
+      .populate('client', 'firstName lastName');
     console.log(`📅 Past reservations fetched for barbershop ${req.params.id}:`, pastReservations);
     res.status(200).json(pastReservations);
   } catch (error) {
     console.error('❌ Error fetching past reservations:', error);
     res.status(500).json({ message: 'Failed to fetch past reservations.' });
+  }
+});
+
+// Get upcoming reservations for a specific barbershop
+router.get('/:id/reservations/upcoming', authMiddleware, async (req, res) => {
+  try {
+    const now = new Date();
+    const upcomingReservations = await Reservation.find({
+      barbershop: req.params.id,
+      date: { $gte: now },
+    })
+      .populate('service', 'name')
+      .populate('personnel', 'firstName lastName')
+      .populate('client', 'firstName lastName');
+    console.log(`📅 Upcoming reservations fetched for barbershop ${req.params.id}:`, upcomingReservations);
+    res.status(200).json(upcomingReservations);
+  } catch (error) {
+    console.error('❌ Error fetching upcoming reservations:', error);
+    res.status(500).json({ message: 'Failed to fetch upcoming reservations.' });
   }
 });
 
@@ -96,7 +119,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Get services by barbershop ID
+// Get services by barbershop ID (alternative route)
 router.get('/services/barbershop/:id', async (req, res) => {
   try {
     const services = await Service.find({ barbershop: req.params.id })

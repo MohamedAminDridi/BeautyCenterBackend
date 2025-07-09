@@ -3,7 +3,7 @@ const router = express.Router();
 const Reservation = require('../models/Reservation');
 const Service = require('../models/Service');
 const User = require('../models/User');
-const BlockedSlot = require('../models/BlockedSlot'); // New import
+const BlockedSlot = require('../models/BlockedSlot');
 const authMiddleware = require('../middleware/authMiddleware');
 const { Expo } = require('expo-server-sdk');
 const expo = new Expo();
@@ -12,12 +12,12 @@ const expo = new Expo();
 router.post('/', authMiddleware, async (req, res) => {
   try {
     console.log('Received body:', req.body);
-    const { services: serviceIds, date } = req.body;
+    const { services: serviceIds, date, barbershopId } = req.body; // Added barbershopId
     const clientId = req.user.id;
 
-    if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0 || !date || isNaN(new Date(date))) {
-      console.log('Validation failed:', { serviceIds, date, isValidDate: !isNaN(new Date(date)) });
-      return res.status(400).json({ message: 'Missing or invalid service(s) or date.' });
+    if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0 || !date || isNaN(new Date(date)) || !barbershopId) {
+      console.log('Validation failed:', { serviceIds, date, barbershopId, isValidDate: !isNaN(new Date(date)) });
+      return res.status(400).json({ message: 'Missing or invalid service(s), date, or barbershop ID.' });
     }
 
     const services = await Service.find({ _id: { $in: serviceIds } }).populate('personnel');
@@ -43,6 +43,7 @@ router.post('/', authMiddleware, async (req, res) => {
     // Check for conflicts with both reservations and blocked slots
     const conflictingReservation = await Reservation.findOne({
       personnel: personnelId,
+      barbershop: barbershopId,
       $or: [
         { date: { $lte: startDate }, endTime: { $gt: startDate } },
         { date: { $lt: endDate }, endTime: { $gte: endDate } },
@@ -64,6 +65,7 @@ router.post('/', authMiddleware, async (req, res) => {
       client: clientId,
       service: serviceIds,
       personnel: personnelId,
+      barbershop: barbershopId, // Added barbershop field
       date: startDate,
       endTime: endDate,
     });
@@ -174,8 +176,8 @@ router.post('/block', authMiddleware, async (req, res) => {
     const blockedSlot = new BlockedSlot({
       date: startDate,
       endTime: endDate,
-      personnel: isAdmin ? null : req.user.id, // Null for admin, personnel ID for others
-      isAdminBlock: isAdmin, // Flag for admin blocks
+      personnel: isAdmin ? null : req.user.id,
+      isAdminBlock: isAdmin,
       isMonthly,
     });
 
@@ -199,7 +201,6 @@ router.get('/blocked/day', authMiddleware, async (req, res) => {
     const endDate = new Date(startDate);
     endDate.setHours(23, 59, 59, 999);
 
-    // Fetch all blocked slots for the day, including admin and personnel-specific
     const blockedSlots = await BlockedSlot.find({
       date: { $gte: startDate, $lte: endDate },
     }).select('date endTime personnel isAdminBlock');
@@ -234,21 +235,5 @@ router.delete('/block', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error. Could not unblock slot.', error: error.message });
   }
 });
-router.get('/barbershop/:id/reservations/upcoming', authMiddleware, async (req, res) => {
-  try {
-    const now = new Date();
-    const upcomingReservations = await Reservation.find({
-      barbershop: req.params.id, // Filter by barbershop ID
-      date: { $gte: now },
-    })
-      .populate('service', 'name')
-      .populate('personnel', 'firstName lastName')
-      .populate('client', 'firstName lastName'); // Optional, depending on schema
-    console.log(`📅 Upcoming reservations fetched for barbershop ${req.params.id}:`, upcomingReservations);
-    res.status(200).json(upcomingReservations);
-  } catch (error) {
-    console.error('❌ Error fetching upcoming reservations:', error);
-    res.status(500).json({ message: 'Failed to fetch upcoming reservations.' });
-  }
-});
+
 module.exports = router;
