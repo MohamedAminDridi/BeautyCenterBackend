@@ -14,7 +14,18 @@ router.get('/categories', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
-
+router.get('/:id/services', authMiddleware, async (req, res) => {
+  try {
+    const services = await Service.find({ barbershop: req.params.id })
+      .select('_id name description price duration loyaltyPoints imageUrl')
+      .lean();
+    console.log(`Returning services for barbershop ${req.params.id}:`, services);
+    res.json(services);
+  } catch (error) {
+    console.error('Error fetching services:', error);
+    res.status(500).json({ message: 'Server error', detail: error.message });
+  }
+});
 router.get('/:id/reservations/past', authMiddleware, async (req, res) => {
   try {
     const now = new Date();
