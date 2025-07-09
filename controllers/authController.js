@@ -27,7 +27,7 @@ const registerUser = async (req, res) => {
       email,
       password: hashedPassword,
       role: role || 'client',
-      profileImageUrl: profileImageUrl || null, // Use Cloudinary URL from frontend
+      profileImageUrl: profileImageUrl || null,
       status,
     });
 
@@ -45,19 +45,20 @@ const registerUser = async (req, res) => {
         description,
         category,
         location: { address, coordinates: { latitude: parseFloat(latitude), longitude: parseFloat(longitude) } },
-        logoUrl: profileImageUrl || null, // Use Cloudinary URL from frontend
-        documents: documents || [], // Use document URLs from frontend
+        logoUrl: profileImageUrl || null,
+        documents: documents || [],
         owner: newUser._id,
         status: 'pending',
       });
 
       await newBarbershop.save();
-      // TODO: Notify admin (e.g., via email or push notification)
+      console.log('Created new barbershop:', newBarbershop._id);
     }
 
     if (role === 'personnel' && barbershopInfo) {
       let barbershopData = typeof barbershopInfo === 'string' ? JSON.parse(barbershopInfo) : barbershopInfo;
       const { barbershopId } = barbershopData;
+      console.log('Personnel registration with barbershopId:', barbershopId); // Debug log
       const barbershop = await Barbershop.findById(barbershopId);
       if (!barbershop) {
         return res.status(400).json({ message: 'Barbershop not found' });
@@ -67,15 +68,15 @@ const registerUser = async (req, res) => {
         personnel: newUser._id,
         barbershop: barbershop._id,
         bio,
-        servicesOffered: servicesOffered || [],
-        photoUrl: profileImageUrl || null, // Use Cloudinary URL from frontend
+        servicesOffered: servicesOffered ? servicesOffered.split(',').map(s => s.trim()) : [],
+        photoUrl: profileImageUrl || null,
         status: 'pending',
       });
 
       await application.save();
+      console.log('Created PersonnelApplication:', application._id); // Debug log
       newUser.barbershop = barbershop._id;
       await newUser.save();
-      // TODO: Notify barbershop owner
     }
 
     const token = jwt.sign(
