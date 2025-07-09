@@ -26,23 +26,7 @@ router.get('/:id/services', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
-router.get('/:id/reservations/upcoming', authMiddleware, async (req, res) => {
-  try {
-    const now = new Date();
-    const upcomingReservations = await Reservation.find({
-      barbershop: req.params.id, // Filter by barbershop ID
-      date: { $gte: now },
-    })
-      .populate('service', 'name')
-      .populate('personnel', 'firstName lastName')
-      .populate('client', 'firstName lastName'); // Optional, depending on schema
-    console.log(`📅 Upcoming reservations fetched for barbershop ${req.params.id}:`, upcomingReservations);
-    res.status(200).json(upcomingReservations);
-  } catch (error) {
-    console.error('❌ Error fetching upcoming reservations:', error);
-    res.status(500).json({ message: 'Failed to fetch upcoming reservations.' });
-  }
-});
+
 router.get('/:id/reservations/past', authMiddleware, async (req, res) => {
   try {
     const now = new Date();
