@@ -3,7 +3,7 @@ const router = express.Router();
 const Barbershop = require('../models/barbershop');
 const Service = require('../models/Service');
 const authMiddleware = require('../middleware/authMiddleware');
-
+const Reservation = require('../models/Reservation'); // Add Reservation model
 // Get unique barbershop categories
 router.get('/categories', authMiddleware, async (req, res) => {
   try {
@@ -12,6 +12,24 @@ router.get('/categories', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Error fetching categories:', error);
     res.status(500).json({ message: 'Server error', detail: error.message });
+  }
+});
+
+router.get('/:id/reservations/past', authMiddleware, async (req, res) => {
+  try {
+    const now = new Date();
+    const pastReservations = await Reservation.find({
+      barbershop: req.params.id, // Assuming Reservation model has a barbershop field
+      date: { $lt: now },
+    })
+      .populate('service', 'name')
+      .populate('personnel', 'firstName lastName')
+      .populate('client', 'firstName lastName'); // Optional, depending on your schema
+    console.log(`📅 Past reservations fetched for barbershop ${req.params.id}:`, pastReservations);
+    res.status(200).json(pastReservations);
+  } catch (error) {
+    console.error('❌ Error fetching past reservations:', error);
+    res.status(500).json({ message: 'Failed to fetch past reservations.' });
   }
 });
 
