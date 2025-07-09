@@ -58,7 +58,7 @@ const registerUser = async (req, res) => {
     if (role === 'personnel' && barbershopInfo) {
       let barbershopData = typeof barbershopInfo === 'string' ? JSON.parse(barbershopInfo) : barbershopInfo;
       const { barbershopId } = barbershopData;
-      console.log('Personnel registration with barbershopId:', barbershopId); // Debug log
+      console.log('Personnel registration with barbershopId:', barbershopId);
       const barbershop = await Barbershop.findById(barbershopId);
       if (!barbershop) {
         return res.status(400).json({ message: 'Barbershop not found' });
@@ -68,13 +68,13 @@ const registerUser = async (req, res) => {
         personnel: newUser._id,
         barbershop: barbershop._id,
         bio,
-        servicesOffered: servicesOffered ? servicesOffered.split(',').map(s => s.trim()) : [],
+        servicesOffered: typeof servicesOffered === 'string' ? servicesOffered.split(',').map(s => s.trim()) : servicesOffered || [],
         photoUrl: profileImageUrl || null,
         status: 'pending',
       });
 
       await application.save();
-      console.log('Created PersonnelApplication:', application._id); // Debug log
+      console.log('Created PersonnelApplication:', application._id);
       newUser.barbershop = barbershop._id;
       await newUser.save();
     }
