@@ -31,6 +31,7 @@ app.use('/api/reservations', reservationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/owner', ownerRoutes);  // <-- register owner routes here
+app.use('/api/barbershops', require('./routes/barbershopRoutes'));
 
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/test', {
