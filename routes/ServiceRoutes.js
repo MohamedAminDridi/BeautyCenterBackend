@@ -23,15 +23,57 @@ cloudinary.config({
 // CREATE service
 router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
   try {
+    console.log('Request body:', req.body); // Debug log
+    console.log('Request file:', req.file); // Debug log
+    
     const { name, category, description, price, duration, loyaltyPoints, personnel, barbershop } = req.body;
 
+    // More detailed validation with better error messages
+    if (!name) return res.status(400).json({ error: 'Service name is required' });
+    if (!category) return res.status(400).json({ error: 'Service category is required' });
+    if (!description) return res.status(400).json({ error: 'Service description is required' });
+    if (!price) return res.status(400).json({ error: 'Service price is required' });
+    if (!duration) return res.status(400).json({ error: 'Service duration is required' });
     if (!barbershop) return res.status(400).json({ error: 'Barbershop ID is required' });
-    if (loyaltyPoints === undefined) return res.status(400).json({ error: 'Loyalty points are required' });
+    if (loyaltyPoints === undefined || loyaltyPoints === '') return res.status(400).json({ error: 'Loyalty points are required' });
 
     let imageUrl = '';
     if (req.file) {
-      const result = await cloudinary.uploader.upload(req.file.path); // Note: Use req.file.buffer for memoryStorage
-      imageUrl = result.secure_url;
+      try {
+        // For memory storage, use req.file.buffer
+        const result = await cloudinary.uploader.upload_stream(
+          { resource_type: 'image' },
+          (error, result) => {
+            if (error) {
+              console.error('Cloudinary upload error:', error);
+              throw error;
+            }
+            return result;
+          }
+        );
+        
+        // If using memory storage, you need to handle the buffer differently
+        const uploadResult = await new Promise((resolve, reject) => {
+          cloudinary.uploader.upload_stream(
+            { resource_type: 'image' },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            }
+          ).end(req.file.buffer);
+        });
+        
+        imageUrl = uploadResult.secure_url;
+      } catch (uploadError) {
+        console.error('Image upload failed:', uploadError);
+        return res.status(500).json({ error: 'Image upload failed', detail: uploadError.message });
+      }
+    }
+
+    // Parse personnel string to array if it exists
+    let personnelArray = [];
+    if (personnel && personnel.trim()) {
+      personnelArray = personnel.split(',').map(id => id.trim()).filter(id => id);
     }
 
     const newService = new Service({
@@ -41,7 +83,7 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
       price: parseFloat(price),
       duration: parseInt(duration),
       loyaltyPoints: parseInt(loyaltyPoints),
-      personnel: personnel ? personnel.split(',').map(id => id.trim()) : [],
+      personnel: personnelArray,
       imageUrl,
       barbershop,
     });
@@ -51,6 +93,7 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
     res.status(201).json(saved);
   } catch (err) {
     console.error('❌ Failed to create service:', err.message);
+    console.error('Full error:', err);
     res.status(500).json({ error: 'Failed to create service', detail: err.message });
   }
 });
