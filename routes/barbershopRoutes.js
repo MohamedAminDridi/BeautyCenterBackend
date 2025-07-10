@@ -15,7 +15,7 @@ router.get('/categories', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
-router.get('/barbershops/:barbershopId/personnel', authMiddleware, async (req, res) => {
+router.get('/:barbershopId/personnel', authMiddleware, async (req, res) => {
   try {
     const personnel = await User.find({
       barbershop: req.params.barbershopId,
