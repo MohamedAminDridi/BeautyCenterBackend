@@ -54,9 +54,8 @@ const registerUser = async (req, res) => {
       await newBarbershop.save();
       console.log('Created new barbershop:', newBarbershop._id);
 
-      // 🔗 Save the back-reference in User
       newUser.barbershop = newBarbershop._id;
-      await newUser.save(); // Second save with the link
+      await newUser.save();
     }
 
     if (role === 'personnel' && barbershopInfo) {
@@ -119,10 +118,13 @@ const loginUser = async (req, res) => {
   }
 
   try {
-    const user = await User.findOne({ phone });
+    const user = await User.findOne({ phone }).select('firstName lastName phone role barbershop profileImageUrl isActive status password');
     if (!user) {
+      console.log('User not found for phone:', phone);
       return res.status(400).json({ message: 'Invalid credentials' });
     }
+
+    console.log('Raw user data from login:', user); // Debug: Log raw user data
 
     if (user.status === 'pending') {
       return res.status(403).json({ message: 'Account is pending approval' });
@@ -143,7 +145,7 @@ const loginUser = async (req, res) => {
       { expiresIn: '1d' }
     );
 
-    res.status(200).json({
+    const response = {
       message: 'Login successful',
       token,
       user: {
@@ -156,9 +158,12 @@ const loginUser = async (req, res) => {
         profileImageUrl: user.profileImageUrl,
         isActive: user.isActive,
         status: user.status,
+        barbershop: user.barbershop, // Include for debugging
       },
       barbershopId: user.barbershop?.toString() || null,
-    });
+    };
+    console.log('Login Response:', response); // Debug: Log response
+    res.status(200).json(response);
   } catch (err) {
     console.error('Login error:', err.message);
     res.status(500).json({ message: 'Server error', error: err.message });

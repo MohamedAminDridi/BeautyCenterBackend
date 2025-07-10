@@ -32,14 +32,14 @@ router.get('/', async (req, res) => {
 // GET /me (authenticated user data)
 router.get('/me', authMiddleware, async (req, res) => {
   try {
-    console.log('req.user:', req.user); // Debug: Log req.user from authMiddleware
-    const user = await User.findById(req.user._id).select('firstName lastName role barbershop profileImageUrl');
+    console.log('req.user from authMiddleware:', req.user); // Debug: Log JWT payload
+    const user = await User.findById(req.user._id).select('firstName lastName role barbershop profileImageUrl email phone isActive status');
     if (!user) {
       console.log('User not found for ID:', req.user._id);
       return res.status(404).json({ error: 'User not found' });
     }
 
-    console.log('Raw user data from DB:', user); // Debug: Log raw user data
+    console.log('Raw user data from DB:', user); // Debug: Log raw user document
     const barbershopId = user.barbershop ? user.barbershop.toString() : null;
 
     const response = {
@@ -50,8 +50,12 @@ router.get('/me', authMiddleware, async (req, res) => {
       barbershopId,
       barbershop: user.barbershop, // Include for debugging
       profileImageUrl: user.profileImageUrl,
+      email: user.email,
+      phone: user.phone,
+      isActive: user.isActive,
+      status: user.status,
     };
-    console.log('ME Response:', response); // Debug: Log full response
+    console.log('ME Response:', response); // Debug: Log response
     res.json(response);
   } catch (err) {
     console.error('Error in /me endpoint:', err);
