@@ -32,9 +32,14 @@ router.get('/', async (req, res) => {
 // GET /me (authenticated user data)
 router.get('/me', authMiddleware, async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select('firstName lastName role barbershop profileImageUrl').lean();
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    console.log('req.user:', req.user); // Debug: Log req.user from authMiddleware
+    const user = await User.findById(req.user._id).select('firstName lastName role barbershop profileImageUrl');
+    if (!user) {
+      console.log('User not found for ID:', req.user._id);
+      return res.status(404).json({ error: 'User not found' });
+    }
 
+    console.log('Raw user data from DB:', user); // Debug: Log raw user data
     const barbershopId = user.barbershop ? user.barbershop.toString() : null;
 
     const response = {
@@ -43,10 +48,10 @@ router.get('/me', authMiddleware, async (req, res) => {
       lastName: user.lastName,
       role: user.role,
       barbershopId,
-      profileImageUrl: user.profileImageUrl,
       barbershop: user.barbershop, // Include for debugging
+      profileImageUrl: user.profileImageUrl,
     };
-    console.log('ME Response:', response); // Log the full response
+    console.log('ME Response:', response); // Debug: Log full response
     res.json(response);
   } catch (err) {
     console.error('Error in /me endpoint:', err);
@@ -141,7 +146,6 @@ router.put('/me', authMiddleware, upload.single('profileImage'), async (req, res
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Extract barbershopId for the response
     const barbershopId = updatedUser.barbershop ? updatedUser.barbershop.toString() : null;
 
     const response = {
@@ -151,7 +155,6 @@ router.put('/me', authMiddleware, upload.single('profileImage'), async (req, res
       role: updatedUser.role,
       barbershopId,
       profileImageUrl: updatedUser.profileImageUrl,
-      barbershop: user.barbershop, // Included for debugging
     };
     res.json(response);
   } catch (err) {
