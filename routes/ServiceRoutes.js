@@ -1,34 +1,27 @@
+// routes/services.js
 const express = require('express');
 const router = express.Router();
 const Service = require('../models/Service');
 const authMiddleware = require('../middleware/authMiddleware');
-
-// Import multer for file uploads
 const multer = require('multer');
-
-// Configure multer storage (e.g., to memory or disk)
-const storage = multer.memoryStorage(); // or multer.diskStorage() if you prefer disk storage
-const upload = multer({ storage: storage });
-
-// Assuming cloudinary is configured elsewhere
 const cloudinary = require('cloudinary').v2;
 
-// Configure Cloudinary (if not already done in another file)
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// CREATE service
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
+
 router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
   try {
-    console.log('Request body:', req.body); // Debug log
-    console.log('Request file:', req.file); // Debug log
-    
+    console.log('Request body:', req.body);
+    console.log('Request file:', req.file);
+
     const { name, category, description, price, duration, loyaltyPoints, personnel, barbershop } = req.body;
 
-    // More detailed validation with better error messages
     if (!name) return res.status(400).json({ error: 'Service name is required' });
     if (!category) return res.status(400).json({ error: 'Service category is required' });
     if (!description) return res.status(400).json({ error: 'Service description is required' });
@@ -39,38 +32,15 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
 
     let imageUrl = '';
     if (req.file) {
-      try {
-        // For memory storage, use req.file.buffer
-        const result = await cloudinary.uploader.upload_stream(
-          { resource_type: 'image' },
-          (error, result) => {
-            if (error) {
-              console.error('Cloudinary upload error:', error);
-              throw error;
-            }
-            return result;
-          }
-        );
-        
-        // If using memory storage, you need to handle the buffer differently
-        const uploadResult = await new Promise((resolve, reject) => {
-          cloudinary.uploader.upload_stream(
-            { resource_type: 'image' },
-            (error, result) => {
-              if (error) reject(error);
-              else resolve(result);
-            }
-          ).end(req.file.buffer);
-        });
-        
-        imageUrl = uploadResult.secure_url;
-      } catch (uploadError) {
-        console.error('Image upload failed:', uploadError);
-        return res.status(500).json({ error: 'Image upload failed', detail: uploadError.message });
-      }
+      const result = await new Promise((resolve, reject) => {
+        cloudinary.uploader.upload_stream({ resource_type: 'image' }, (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }).end(req.file.buffer);
+      });
+      imageUrl = result.secure_url;
     }
 
-    // Parse personnel string to array if it exists
     let personnelArray = [];
     if (personnel && personnel.trim()) {
       personnelArray = personnel.split(',').map(id => id.trim()).filter(id => id);
@@ -93,12 +63,11 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
     res.status(201).json(saved);
   } catch (err) {
     console.error('❌ Failed to create service:', err.message);
-    console.error('Full error:', err);
     res.status(500).json({ error: 'Failed to create service', detail: err.message });
   }
 });
 
-// READ all services
+// Other routes (unchanged)
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const services = await Service.find()
@@ -112,7 +81,6 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-// READ single service
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const service = await Service.findById(req.params.id)
@@ -130,7 +98,6 @@ router.get('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// UPDATE service
 router.put('/:id', authMiddleware, async (req, res) => {
   try {
     const { name, category, description, price, duration, loyaltyPoints, personnel, imageUrl, barbershop } = req.body;
@@ -171,7 +138,6 @@ router.put('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// DELETE service
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const deleted = await Service.findByIdAndDelete(req.params.id);
@@ -186,7 +152,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     res.status(500).json({ error: 'Failed to delete service', detail: err.message });
   }
 });
-// Get services by barbershop ID (new route to match client request)
+
 router.get('/:id/services', authMiddleware, async (req, res) => {
   try {
     const services = await Service.find({ barbershop: req.params.id })
