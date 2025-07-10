@@ -151,6 +151,7 @@ router.put('/me', authMiddleware, upload.single('profileImage'), async (req, res
       role: updatedUser.role,
       barbershopId,
       profileImageUrl: updatedUser.profileImageUrl,
+      barbershop: user.barbershop, // Included for debugging
     };
     res.json(response);
   } catch (err) {
