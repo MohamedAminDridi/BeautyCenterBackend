@@ -30,11 +30,9 @@ router.get('/', async (req, res) => {
 });
 
 // GET /me (authenticated user data)
-// users.js (partial update for /me)
-// users.js (or relevant route file)
 router.get('/me', authMiddleware, async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select('firstName lastName role barbershop profileImageUrl');
+    const user = await User.findById(req.user._id).select('firstName lastName role barbershop profileImageUrl').lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const barbershopId = user.barbershop ? user.barbershop.toString() : null;
@@ -46,8 +44,9 @@ router.get('/me', authMiddleware, async (req, res) => {
       role: user.role,
       barbershopId,
       profileImageUrl: user.profileImageUrl,
+      barbershop: user.barbershop, // Include for debugging
     };
-    console.log('ME Response:', response); // Add logging for debugging
+    console.log('ME Response:', response); // Log the full response
     res.json(response);
   } catch (err) {
     console.error('Error in /me endpoint:', err);
