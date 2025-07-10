@@ -53,6 +53,10 @@ const registerUser = async (req, res) => {
 
       await newBarbershop.save();
       console.log('Created new barbershop:', newBarbershop._id);
+
+      // 🔗 Save the back-reference in User
+      newUser.barbershop = newBarbershop._id;
+      await newUser.save(); // Second save with the link
     }
 
     if (role === 'personnel' && barbershopInfo) {
@@ -99,8 +103,7 @@ const registerUser = async (req, res) => {
         isActive: newUser.isActive,
         status: newUser.status,
       },
-        barbershopId: newUser.barbershop?.toString() || null,  // <--- ADD THIS
-
+      barbershopId: newUser.barbershop?.toString() || null,
     });
   } catch (err) {
     console.error('Registration error:', err);
@@ -108,7 +111,6 @@ const registerUser = async (req, res) => {
   }
 };
 
-// LOGIN USER, APPROVE BARBERSHOP, APPROVE PERSONNEL (unchanged)
 const loginUser = async (req, res) => {
   const { phone, password } = req.body;
 
@@ -155,8 +157,7 @@ const loginUser = async (req, res) => {
         isActive: user.isActive,
         status: user.status,
       },
-        barbershopId: user.barbershop?.toString() || null, // <--- ADD THIS
-
+      barbershopId: user.barbershop?.toString() || null,
     });
   } catch (err) {
     console.error('Login error:', err.message);
