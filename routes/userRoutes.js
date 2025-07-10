@@ -30,21 +30,20 @@ router.get('/', async (req, res) => {
 });
 
 // GET /me (authenticated user data)
+// users.js (partial update for /me)
 router.get('/me', authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select('firstName lastName role barbershop profileImageUrl');
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    // Extract barbershopId from the barbershop field (ObjectId)
     const barbershopId = user.barbershop ? user.barbershop.toString() : null;
 
-    // Return user data with barbershopId
     const response = {
       _id: user._id,
       firstName: user.firstName,
       lastName: user.lastName,
       role: user.role,
-      barbershopId, // Explicitly include barbershopId
+      barbershopId,
       profileImageUrl: user.profileImageUrl,
     };
     res.json(response);
@@ -52,7 +51,6 @@ router.get('/me', authMiddleware, async (req, res) => {
     res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
-
 // PUT update role
 router.put('/users/:id/role', async (req, res) => {
   const { id } = req.params;
