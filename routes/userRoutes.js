@@ -47,11 +47,14 @@ router.get('/me', authMiddleware, async (req, res) => {
       barbershopId,
       profileImageUrl: user.profileImageUrl,
     };
+    console.log('ME Response:', response); // Add logging for debugging
     res.json(response);
   } catch (err) {
+    console.error('Error in /me endpoint:', err);
     res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
+
 // PUT update role
 router.put('/users/:id/role', async (req, res) => {
   const { id } = req.params;
