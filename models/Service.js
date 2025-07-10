@@ -8,7 +8,6 @@ const serviceSchema = new mongoose.Schema({
   category: {
     type: String,
     required: true,
-    enum: ['Hair', 'Nails', 'Skin', 'Massage', 'Makeup', 'Other'],
   },
   description: {
     type: String,
