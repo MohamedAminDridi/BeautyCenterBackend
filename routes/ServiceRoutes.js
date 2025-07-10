@@ -1,7 +1,7 @@
-// routes/services.js
 const express = require('express');
 const router = express.Router();
 const Service = require('../models/Service');
+const Personnel = require('../models/Personnel'); // Assuming Personnel model exists
 const authMiddleware = require('../middleware/authMiddleware');
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
@@ -22,6 +22,7 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
 
     const { name, category, description, price, duration, loyaltyPoints, personnel, barbershop } = req.body;
 
+    // Validation
     if (!name) return res.status(400).json({ error: 'Service name is required' });
     if (!category) return res.status(400).json({ error: 'Service category is required' });
     if (!description) return res.status(400).json({ error: 'Service description is required' });
@@ -30,6 +31,33 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
     if (!barbershop) return res.status(400).json({ error: 'Barbershop ID is required' });
     if (loyaltyPoints === undefined || loyaltyPoints === '') return res.status(400).json({ error: 'Loyalty points are required' });
 
+    // Parse personnel as JSON array
+    let personnelArray = [];
+    if (personnel && personnel.trim()) {
+      try {
+        personnelArray = JSON.parse(personnel);
+        if (!Array.isArray(personnelArray)) {
+          return res.status(400).json({ error: 'Personnel must be an array of IDs' });
+        }
+      } catch (err) {
+        return res.status(400).json({ error: 'Invalid personnel format, expected JSON array' });
+      }
+    }
+
+    // Validate personnel IDs
+    if (personnelArray.length > 0) {
+      const validPersonnel = await Personnel.find({ 
+        _id: { $in: personnelArray },
+        barbershop: barbershop 
+      }).select('_id');
+      const validIds = validPersonnel.map(p => p._id.toString());
+      const invalidIds = personnelArray.filter(id => !validIds.includes(id));
+      if (invalidIds.length > 0) {
+        return res.status(400).json({ error: `Invalid personnel IDs: ${invalidIds.join(', ')}` });
+      }
+    }
+
+    // Handle image upload
     let imageUrl = '';
     if (req.file) {
       const result = await new Promise((resolve, reject) => {
@@ -41,11 +69,7 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
       imageUrl = result.secure_url;
     }
 
-    let personnelArray = [];
-    if (personnel && personnel.trim()) {
-      personnelArray = personnel.split(',').map(id => id.trim()).filter(id => id);
-    }
-
+    // Create new service
     const newService = new Service({
       name,
       category,
@@ -109,6 +133,32 @@ router.put('/:id', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Loyalty points are required' });
     }
 
+    // Parse personnel as JSON array
+    let personnelArray = [];
+    if (personnel && personnel.trim()) {
+      try {
+        personnelArray = JSON.parse(personnel);
+        if (!Array.isArray(personnelArray)) {
+          return res.status(400).json({ error: 'Personnel must be an array of IDs' });
+        }
+      } catch (err) {
+        return res.status(400).json({ error: 'Invalid personnel format, expected JSON array' });
+      }
+    }
+
+    // Validate personnel IDs
+    if (personnelArray.length > 0) {
+      const validPersonnel = await Personnel.find({ 
+        _id: { $in: personnelArray },
+        barbershop: barbershop 
+      }).select('_id');
+      const validIds = validPersonnel.map(p => p._id.toString());
+      const invalidIds = personnelArray.filter(id => !validIds.includes(id));
+      if (invalidIds.length > 0) {
+        return res.status(400).json({ error: `Invalid personnel IDs: ${invalidIds.join(', ')}` });
+      }
+    }
+
     const update = {
       name,
       category,
@@ -116,7 +166,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
       price: parseFloat(price),
       duration: parseInt(duration),
       loyaltyPoints: parseInt(loyaltyPoints),
-      personnel: personnel ? personnel.split(',').map(id => id.trim()) : [],
+      personnel: personnelArray,
       barbershop,
     };
 
@@ -153,10 +203,11 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-router.get('/:id/services', authMiddleware, async (req, res) => {
+router.get('/barbershop/:id/services', authMiddleware, async (req, res) => {
   try {
     const services = await Service.find({ barbershop: req.params.id })
-      .select('_id name description price duration loyaltyPoints imageUrl')
+      .select('_id name description price duration loyaltyPoints imageUrl personnel')
+      .populate('personnel', 'firstName lastName')
       .lean();
     console.log(`Returning services for barbershop ${req.params.id}:`, services);
     res.json(services);
