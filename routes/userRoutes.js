@@ -4,9 +4,7 @@ const User = require('../models/User');
 const path = require('path');
 const multer = require('multer');
 const authMiddleware = require('../middleware/authMiddleware');
-const cloudinary = require('cloudinary').v2; // Add Cloudinary
-
-
+const cloudinary = require('cloudinary').v2;
 
 // Setup multer for temporary storage
 const storage = multer.diskStorage({
@@ -36,7 +34,20 @@ router.get('/me', authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select('firstName lastName role barbershop profileImageUrl');
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
+
+    // Extract barbershopId from the barbershop field (ObjectId)
+    const barbershopId = user.barbershop ? user.barbershop.toString() : null;
+
+    // Return user data with barbershopId
+    const response = {
+      _id: user._id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      barbershopId, // Explicitly include barbershopId
+      profileImageUrl: user.profileImageUrl,
+    };
+    res.json(response);
   } catch (err) {
     res.status(500).json({ error: 'Server error', detail: err.message });
   }
@@ -77,7 +88,7 @@ router.put('/:id/toggle', async (req, res) => {
     await user.save();
     res.json({ isActive: user.isActive });
   } catch (err) {
-    res.status(500).json({ message: "Error toggling user status", error: err.message });
+    res.status(500).json({ message: 'Error toggling user status', error: err.message });
   }
 });
 
@@ -111,7 +122,7 @@ router.delete('/:id', async (req, res) => {
 // PUT /me (update authenticated user with image)
 router.put('/me', authMiddleware, upload.single('profileImage'), async (req, res) => {
   try {
-    const userId = req.user._id; // Use _id directly from authMiddleware
+    const userId = req.user._id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized: no user ID in token' });
     }
@@ -120,7 +131,7 @@ router.put('/me', authMiddleware, upload.single('profileImage'), async (req, res
 
     if (req.file) {
       const result = await cloudinary.uploader.upload(req.file.path);
-      updates.profileImageUrl = result.secure_url; // Use Cloudinary URL
+      updates.profileImageUrl = result.secure_url;
     }
 
     const updatedUser = await User.findByIdAndUpdate(userId, updates, { new: true });
@@ -129,7 +140,18 @@ router.put('/me', authMiddleware, upload.single('profileImage'), async (req, res
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json(updatedUser);
+    // Extract barbershopId for the response
+    const barbershopId = updatedUser.barbershop ? updatedUser.barbershop.toString() : null;
+
+    const response = {
+      _id: updatedUser._id,
+      firstName: updatedUser.firstName,
+      lastName: updatedUser.lastName,
+      role: updatedUser.role,
+      barbershopId,
+      profileImageUrl: updatedUser.profileImageUrl,
+    };
+    res.json(response);
   } catch (err) {
     console.error('Update failed:', err.message);
     res.status(500).json({ error: 'Update failed' });
