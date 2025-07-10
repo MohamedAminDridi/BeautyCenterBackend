@@ -31,6 +31,7 @@ router.get('/', async (req, res) => {
 
 // GET /me (authenticated user data)
 // users.js (partial update for /me)
+// users.js (or relevant route file)
 router.get('/me', authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select('firstName lastName role barbershop profileImageUrl');
