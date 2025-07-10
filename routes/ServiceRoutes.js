@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Service = require('../models/Service');
-const Personnel = require('../models/Personnel'); // Assuming Personnel model exists
+const User = require('../models/User'); // Use User model instead of Personnel
 const authMiddleware = require('../middleware/authMiddleware');
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
@@ -46,9 +46,11 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
 
     // Validate personnel IDs
     if (personnelArray.length > 0) {
-      const validPersonnel = await Personnel.find({ 
+      const validPersonnel = await User.find({ 
         _id: { $in: personnelArray },
-        barbershop: barbershop 
+        barbershop: barbershop,
+        role: 'personnel',
+        status: 'approved' // Ensure only approved personnel
       }).select('_id');
       const validIds = validPersonnel.map(p => p._id.toString());
       const invalidIds = personnelArray.filter(id => !validIds.includes(id));
@@ -91,11 +93,11 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
   }
 });
 
-// Other routes (unchanged)
+// Other routes (updated to use User instead of Personnel)
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const services = await Service.find()
-      .populate('personnel', 'firstName lastName profileImageUrl')
+      .populate('personnel', 'firstName lastName profileImageUrl', { role: 'personnel' })
       .populate('barbershop', 'name');
     console.log('🛒 Services fetched:', services.map(s => ({ _id: s._id, name: s.name, barbershop: s.barbershop?.name })));
     res.json(services);
@@ -108,7 +110,7 @@ router.get('/', authMiddleware, async (req, res) => {
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const service = await Service.findById(req.params.id)
-      .populate('personnel', 'firstName lastName')
+      .populate('personnel', 'firstName lastName', { role: 'personnel' })
       .populate('barbershop', 'name');
     if (!service) {
       console.log(`❌ Service not found: ${req.params.id}`);
@@ -148,9 +150,11 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
     // Validate personnel IDs
     if (personnelArray.length > 0) {
-      const validPersonnel = await Personnel.find({ 
+      const validPersonnel = await User.find({ 
         _id: { $in: personnelArray },
-        barbershop: barbershop 
+        barbershop: barbershop,
+        role: 'personnel',
+        status: 'approved'
       }).select('_id');
       const validIds = validPersonnel.map(p => p._id.toString());
       const invalidIds = personnelArray.filter(id => !validIds.includes(id));
@@ -203,16 +207,30 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-router.get('/barbershop/:id/services', authMiddleware, async (req, res) => {
+router.get('/barbershops/:id/services', authMiddleware, async (req, res) => {
   try {
     const services = await Service.find({ barbershop: req.params.id })
       .select('_id name description price duration loyaltyPoints imageUrl personnel')
-      .populate('personnel', 'firstName lastName')
+      .populate('personnel', 'firstName lastName', { role: 'personnel' })
       .lean();
     console.log(`Returning services for barbershop ${req.params.id}:`, services);
     res.json(services);
   } catch (error) {
     console.error('Error fetching services:', error);
+    res.status(500).json({ message: 'Server error', detail: error.message });
+  }
+});
+router.get('/barbershops/:barbershopId/personnel', authMiddleware, async (req, res) => {
+  try {
+    const personnel = await User.find({
+      barbershop: req.params.barbershopId,
+      role: 'personnel',
+      status: 'approved',
+    }).select('_id firstName lastName profileImageUrl');
+    console.log(`Returning personnel for barbershop ${req.params.barbershopId}:`, personnel);
+    res.json(personnel);
+  } catch (error) {
+    console.error('Error fetching personnel:', error);
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
