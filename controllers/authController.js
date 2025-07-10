@@ -99,6 +99,8 @@ const registerUser = async (req, res) => {
         isActive: newUser.isActive,
         status: newUser.status,
       },
+        barbershopId: newUser.barbershop?.toString() || null,  // <--- ADD THIS
+
     });
   } catch (err) {
     console.error('Registration error:', err);
@@ -153,6 +155,8 @@ const loginUser = async (req, res) => {
         isActive: user.isActive,
         status: user.status,
       },
+        barbershopId: user.barbershop?.toString() || null, // <--- ADD THIS
+
     });
   } catch (err) {
     console.error('Login error:', err.message);
