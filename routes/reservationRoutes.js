@@ -19,18 +19,13 @@ router.post('/', authMiddleware, async (req, res) => {
     if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0) {
       return res.status(400).json({ message: 'Missing or invalid service(s).' });
     }
+    if (!barbershopId) {
+      return res.status(400).json({ message: 'Barbershop ID is required.' });
+    }
     const startDate = new Date(date);
     if (isNaN(startDate.getTime())) {
       console.log('Invalid date:', date);
       return res.status(400).json({ message: 'Invalid date provided.' });
-    }
-    if (!barbershopId) {
-      console.log('Missing barbershopId, attempting to derive from services');
-      const firstService = await Service.findById(serviceIds[0]);
-      if (!firstService || !firstService.barbershop) {
-        return res.status(400).json({ message: 'Barbershop ID is required or cannot be derived.' });
-      }
-      barbershopId = firstService.barbershop.toString();
     }
 
     const services = await Service.find({ _id: { $in: serviceIds } }).populate('personnel');
@@ -55,10 +50,15 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'No personnel assigned to these services.' });
     }
 
+    const personnel = await User.findById(personnelId);
+    if (!personnel || personnel.barbershop.toString() !== barbershopId) {
+      return res.status(400).json({ message: 'Selected personnel does not belong to this barbershop.' });
+    }
+
     const totalDuration = services.reduce((total, service) => total + (service.duration || 30), 0);
     const endDate = new Date(startDate.getTime() + totalDuration * 60000);
 
-    // Check for conflicts with both reservations and blocked slots
+    // Check for conflicts with reservations and blocked slots for the specific barbershop
     const conflictingReservation = await Reservation.findOne({
       personnel: personnelId,
       barbershop: barbershopId,
@@ -69,6 +69,7 @@ router.post('/', authMiddleware, async (req, res) => {
     });
     const conflictingBlockedSlot = await BlockedSlot.findOne({
       personnel: personnelId,
+      barbershop: barbershopId, // Filter by barbershop
       $or: [
         { date: { $lte: startDate }, endTime: { $gt: startDate } },
         { date: { $lt: endDate }, endTime: { $gte: endDate } },
@@ -88,7 +89,6 @@ router.post('/', authMiddleware, async (req, res) => {
       endTime: endDate,
     });
 
-    const personnel = await User.findById(personnelId);
     if (personnel?.pushToken && Expo.isExpoPushToken(personnel.pushToken)) {
       await expo.sendPushNotificationsAsync([
         {
@@ -187,7 +187,10 @@ router.get('/', authMiddleware, async (req, res) => {
 // ✅ Create a new blocked slot
 router.post('/block', authMiddleware, async (req, res) => {
   try {
-    const { date, time, isMonthly, barbershopId } = req.body; // Added barbershopId
+    const { date, time, isMonthly, barbershopId } = req.body;
+    if (!barbershopId) {
+      return res.status(400).json({ message: 'Barbershop ID is required.' });
+    }
     const startDate = new Date(date);
     if (isNaN(startDate.getTime())) {
       return res.status(400).json({ message: 'Invalid date provided.' });
@@ -203,7 +206,7 @@ router.post('/block', authMiddleware, async (req, res) => {
       personnel: isAdmin ? null : req.user.id,
       isAdminBlock: isAdmin,
       isMonthly,
-      barbershop: barbershopId, // Added barbershop field
+      barbershop: barbershopId,
     });
 
     await blockedSlot.save();
@@ -218,8 +221,8 @@ router.post('/block', authMiddleware, async (req, res) => {
 router.get('/blocked/day', authMiddleware, async (req, res) => {
   try {
     const { date, barbershopId } = req.query;
-    if (!date) {
-      return res.status(400).json({ message: 'Date query parameter is required.' });
+    if (!date || !barbershopId) {
+      return res.status(400).json({ message: 'Date and barbershop ID query parameters are required.' });
     }
     const startDate = new Date(date);
     if (isNaN(startDate.getTime())) {
@@ -230,7 +233,7 @@ router.get('/blocked/day', authMiddleware, async (req, res) => {
     endDate.setHours(23, 59, 59, 999);
 
     const blockedSlots = await BlockedSlot.find({
-      barbershop: barbershopId, // Filter by barbershop
+      barbershop: barbershopId,
       date: { $gte: startDate, $lte: endDate },
     }).select('date endTime personnel isAdminBlock');
 
@@ -244,7 +247,10 @@ router.get('/blocked/day', authMiddleware, async (req, res) => {
 // ✅ Delete a blocked slot
 router.delete('/block', authMiddleware, async (req, res) => {
   try {
-    const { date, time, barbershopId } = req.body; // Added barbershopId
+    const { date, time, barbershopId } = req.body;
+    if (!barbershopId) {
+      return res.status(400).json({ message: 'Barbershop ID is required.' });
+    }
     const startDate = new Date(date);
     if (isNaN(startDate.getTime())) {
       return res.status(400).json({ message: 'Invalid date provided.' });
@@ -255,7 +261,7 @@ router.delete('/block', authMiddleware, async (req, res) => {
     const blockedSlot = await BlockedSlot.findOneAndDelete({
       date: startDate,
       personnel: req.user.role === 'admin' ? null : req.user.id,
-      barbershop: barbershopId, // Filter by barbershop
+      barbershop: barbershopId,
     });
 
     if (!blockedSlot) {
