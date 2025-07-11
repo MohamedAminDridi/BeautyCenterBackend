@@ -11,23 +11,33 @@ const expo = new Expo();
 // ✅ Create a reservation and notify personnel
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    console.log('Received body:', req.body);
+    // Log the raw received body for debugging
+    console.log('Raw received body:', req.body);
     const { services: serviceIds, date, barbershopId } = req.body;
+    console.log('Destructured serviceIds:', serviceIds); // Log after destructuring
+
     const clientId = req.user.id;
 
     // Validate inputs
     if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0) {
+      console.log('Validation failed - serviceIds:', serviceIds); // Debug log
       return res.status(400).json({ message: 'Missing or invalid service(s).' });
-    }
-    if (!barbershopId) {
-      return res.status(400).json({ message: 'Barbershop ID is required.' });
     }
     const startDate = new Date(date);
     if (isNaN(startDate.getTime())) {
       console.log('Invalid date:', date);
       return res.status(400).json({ message: 'Invalid date provided.' });
     }
+    if (!barbershopId) {
+      console.log('Missing barbershopId, attempting to derive from services');
+      const firstService = await Service.findById(serviceIds[0]);
+      if (!firstService || !firstService.barbershop) {
+        return res.status(400).json({ message: 'Barbershop ID is required or cannot be derived.' });
+      }
+      barbershopId = firstService.barbershop.toString();
+    }
 
+    // Fetch and validate services
     const services = await Service.find({ _id: { $in: serviceIds } }).populate('personnel');
     console.log('Found services:', services);
     if (services.length !== serviceIds.length) {
@@ -40,6 +50,7 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'All services must belong to the selected barbershop.' });
     }
 
+    // Ensure all services are assigned to the same personnel
     const personnelIds = services.map(s => Array.isArray(s.personnel) ? s.personnel[0]?._id : s.personnel?._id);
     const uniquePersonnelIds = [...new Set(personnelIds)];
     if (uniquePersonnelIds.length > 1) {
@@ -50,15 +61,11 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'No personnel assigned to these services.' });
     }
 
-    const personnel = await User.findById(personnelId);
-    if (!personnel || personnel.barbershop.toString() !== barbershopId) {
-      return res.status(400).json({ message: 'Selected personnel does not belong to this barbershop.' });
-    }
-
+    // Calculate end time based on total duration
     const totalDuration = services.reduce((total, service) => total + (service.duration || 30), 0);
     const endDate = new Date(startDate.getTime() + totalDuration * 60000);
 
-    // Check for conflicts with reservations and blocked slots for the specific barbershop
+    // Check for conflicts with both reservations and blocked slots
     const conflictingReservation = await Reservation.findOne({
       personnel: personnelId,
       barbershop: barbershopId,
@@ -69,7 +76,6 @@ router.post('/', authMiddleware, async (req, res) => {
     });
     const conflictingBlockedSlot = await BlockedSlot.findOne({
       personnel: personnelId,
-      barbershop: barbershopId, // Filter by barbershop
       $or: [
         { date: { $lte: startDate }, endTime: { $gt: startDate } },
         { date: { $lt: endDate }, endTime: { $gte: endDate } },
@@ -80,6 +86,7 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(409).json({ message: 'This slot is already booked or blocked.' });
     }
 
+    // Create the new reservation
     const newReservation = await Reservation.create({
       client: clientId,
       service: serviceIds,
@@ -89,6 +96,8 @@ router.post('/', authMiddleware, async (req, res) => {
       endTime: endDate,
     });
 
+    // Notify personnel via push notification
+    const personnel = await User.findById(personnelId);
     if (personnel?.pushToken && Expo.isExpoPushToken(personnel.pushToken)) {
       await expo.sendPushNotificationsAsync([
         {
