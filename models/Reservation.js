@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const reservationSchema = new mongoose.Schema({
-  service: { type: mongoose.Schema.Types.ObjectId, ref: 'Service', required: function() { return !this.blocked; } },
+  service: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Service', required: function() { return !this.blocked; } }],
   client: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: function() { return !this.blocked; } },
   personnel: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   barbershop: { type: mongoose.Schema.Types.ObjectId, ref: 'Barbershop', required: true }, // Added field
