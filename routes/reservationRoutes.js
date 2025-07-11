@@ -9,21 +9,41 @@ const { Expo } = require('expo-server-sdk');
 const expo = new Expo();
 
 // ✅ Create a reservation and notify personnel
+// ✅ Create a reservation and notify personnel
 router.post('/', authMiddleware, async (req, res) => {
   try {
     console.log('Received body:', req.body);
-    const { services: serviceIds, date, barbershopId } = req.body; // Added barbershopId
+    const { services: serviceIds, date, barbershopId } = req.body;
     const clientId = req.user.id;
 
-    if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0 || !date || isNaN(new Date(date)) || !barbershopId) {
-      console.log('Validation failed:', { serviceIds, date, barbershopId, isValidDate: !isNaN(new Date(date)) });
-      return res.status(400).json({ message: 'Missing or invalid service(s), date, or barbershop ID.' });
+    // Validate inputs
+    if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0) {
+      return res.status(400).json({ message: 'Missing or invalid service(s).' });
+    }
+    const startDate = new Date(date);
+    if (isNaN(startDate.getTime())) {
+      console.log('Invalid date:', date);
+      return res.status(400).json({ message: 'Invalid date provided.' });
+    }
+    if (!barbershopId) {
+      console.log('Missing barbershopId, attempting to derive from services');
+      const firstService = await Service.findById(serviceIds[0]);
+      if (!firstService || !firstService.barbershop) {
+        return res.status(400).json({ message: 'Barbershop ID is required or cannot be derived.' });
+      }
+      barbershopId = firstService.barbershop.toString();
     }
 
     const services = await Service.find({ _id: { $in: serviceIds } }).populate('personnel');
     console.log('Found services:', services);
     if (services.length !== serviceIds.length) {
       return res.status(404).json({ message: 'One or more services not found.' });
+    }
+
+    // Ensure all services belong to the same barbershop
+    const barbershopIds = services.map(s => s.barbershop.toString());
+    if (new Set(barbershopIds).size > 1 || !barbershopIds.includes(barbershopId)) {
+      return res.status(400).json({ message: 'All services must belong to the selected barbershop.' });
     }
 
     const personnelIds = services.map(s => Array.isArray(s.personnel) ? s.personnel[0]?._id : s.personnel?._id);
@@ -36,7 +56,6 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'No personnel assigned to these services.' });
     }
 
-    const startDate = new Date(date);
     const totalDuration = services.reduce((total, service) => total + (service.duration || 30), 0);
     const endDate = new Date(startDate.getTime() + totalDuration * 60000);
 
@@ -65,7 +84,7 @@ router.post('/', authMiddleware, async (req, res) => {
       client: clientId,
       service: serviceIds,
       personnel: personnelId,
-      barbershop: barbershopId, // Added barbershop field
+      barbershop: barbershopId,
       date: startDate,
       endTime: endDate,
     });
@@ -133,6 +152,9 @@ router.get('/personnel/:id', authMiddleware, async (req, res) => {
     let query = { personnel: req.params.id };
     if (date) {
       const startDate = new Date(date);
+      if (isNaN(startDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid date provided.' });
+      }
       startDate.setHours(0, 0, 0, 0);
       const endDate = new Date(startDate);
       endDate.setHours(23, 59, 59, 999);
@@ -168,6 +190,9 @@ router.post('/block', authMiddleware, async (req, res) => {
   try {
     const { date, time, isMonthly } = req.body;
     const startDate = new Date(date);
+    if (isNaN(startDate.getTime())) {
+      return res.status(400).json({ message: 'Invalid date provided.' });
+    }
     const [hours, minutes] = time.split(':').map(Number);
     startDate.setHours(hours, minutes, 0, 0);
     const endDate = new Date(startDate.getTime() + 30 * 60000);
@@ -193,10 +218,13 @@ router.post('/block', authMiddleware, async (req, res) => {
 router.get('/blocked/day', authMiddleware, async (req, res) => {
   try {
     const { date } = req.query;
-    if (!date || isNaN(new Date(date))) {
-      return res.status(400).json({ message: 'Invalid date provided.' });
+    if (!date) {
+      return res.status(400).json({ message: 'Date query parameter is required.' });
     }
     const startDate = new Date(date);
+    if (isNaN(startDate.getTime())) {
+      return res.status(400).json({ message: 'Invalid date provided.' });
+    }
     startDate.setHours(0, 0, 0, 0);
     const endDate = new Date(startDate);
     endDate.setHours(23, 59, 59, 999);
@@ -217,6 +245,9 @@ router.delete('/block', authMiddleware, async (req, res) => {
   try {
     const { date, time } = req.body;
     const startDate = new Date(date);
+    if (isNaN(startDate.getTime())) {
+      return res.status(400).json({ message: 'Invalid date provided.' });
+    }
     const [hours, minutes] = time.split(':').map(Number);
     startDate.setHours(hours, minutes, 0, 0);
 
