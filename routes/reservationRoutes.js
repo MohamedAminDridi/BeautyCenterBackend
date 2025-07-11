@@ -9,7 +9,6 @@ const { Expo } = require('expo-server-sdk');
 const expo = new Expo();
 
 // ✅ Create a reservation and notify personnel
-// ✅ Create a reservation and notify personnel
 router.post('/', authMiddleware, async (req, res) => {
   try {
     console.log('Received body:', req.body);
@@ -188,7 +187,7 @@ router.get('/', authMiddleware, async (req, res) => {
 // ✅ Create a new blocked slot
 router.post('/block', authMiddleware, async (req, res) => {
   try {
-    const { date, time, isMonthly } = req.body;
+    const { date, time, isMonthly, barbershopId } = req.body; // Added barbershopId
     const startDate = new Date(date);
     if (isNaN(startDate.getTime())) {
       return res.status(400).json({ message: 'Invalid date provided.' });
@@ -204,6 +203,7 @@ router.post('/block', authMiddleware, async (req, res) => {
       personnel: isAdmin ? null : req.user.id,
       isAdminBlock: isAdmin,
       isMonthly,
+      barbershop: barbershopId, // Added barbershop field
     });
 
     await blockedSlot.save();
@@ -214,10 +214,10 @@ router.post('/block', authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Get blocked slots for a specific day
+// ✅ Get blocked slots for a specific day and barbershop
 router.get('/blocked/day', authMiddleware, async (req, res) => {
   try {
-    const { date } = req.query;
+    const { date, barbershopId } = req.query;
     if (!date) {
       return res.status(400).json({ message: 'Date query parameter is required.' });
     }
@@ -230,6 +230,7 @@ router.get('/blocked/day', authMiddleware, async (req, res) => {
     endDate.setHours(23, 59, 59, 999);
 
     const blockedSlots = await BlockedSlot.find({
+      barbershop: barbershopId, // Filter by barbershop
       date: { $gte: startDate, $lte: endDate },
     }).select('date endTime personnel isAdminBlock');
 
@@ -243,7 +244,7 @@ router.get('/blocked/day', authMiddleware, async (req, res) => {
 // ✅ Delete a blocked slot
 router.delete('/block', authMiddleware, async (req, res) => {
   try {
-    const { date, time } = req.body;
+    const { date, time, barbershopId } = req.body; // Added barbershopId
     const startDate = new Date(date);
     if (isNaN(startDate.getTime())) {
       return res.status(400).json({ message: 'Invalid date provided.' });
@@ -254,6 +255,7 @@ router.delete('/block', authMiddleware, async (req, res) => {
     const blockedSlot = await BlockedSlot.findOneAndDelete({
       date: startDate,
       personnel: req.user.role === 'admin' ? null : req.user.id,
+      barbershop: barbershopId, // Filter by barbershop
     });
 
     if (!blockedSlot) {
