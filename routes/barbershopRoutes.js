@@ -16,7 +16,6 @@ router.get('/categories', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
-
 // Get personnel by barbershop ID
 router.get('/:id/personnel', authMiddleware, async (req, res) => {
   try {
@@ -24,7 +23,7 @@ router.get('/:id/personnel', authMiddleware, async (req, res) => {
       barbershop: req.params.id,
       role: 'personnel',
       status: 'approved',
-    }).select('_id firstName lastName profileImageUrl');
+    }).select('_id firstName lastName profileImageUrl status barbershop');
     console.log(`Returning personnel for barbershop ${req.params.id}:`, personnel);
     res.json(personnel);
   } catch (error) {
@@ -32,6 +31,7 @@ router.get('/:id/personnel', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
+
 
 // Get services by barbershop ID
 router.get('/:id/services', authMiddleware, async (req, res) => {
