@@ -9,71 +9,94 @@ const { Expo } = require('expo-server-sdk');
 const expo = new Expo();
 
 // ✅ Create a reservation and notify personnel
+// ✅ Create a reservation and notify personnel
 router.post('/', authMiddleware, async (req, res) => {
   try {
     // Log the raw received body for debugging
     console.log('Raw received body:', req.body);
-    const { services: serviceIds, date, barbershopId } = req.body;
-    console.log('Destructured serviceIds:', serviceIds); // Log after destructuring
+    
+    // Fix the destructuring - get services directly, not as serviceIds
+    const { services, date, barbershopId, personnel } = req.body;
+    console.log('Destructured services:', services);
+    console.log('Destructured personnel:', personnel);
 
     const clientId = req.user.id;
 
     // Validate inputs
-    if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0) {
-      console.log('Validation failed - serviceIds:', serviceIds); // Debug log
+    if (!services || !Array.isArray(services) || services.length === 0) {
+      console.log('Validation failed - services:', services);
       return res.status(400).json({ message: 'Missing or invalid service(s).' });
     }
+    
     const startDate = new Date(date);
     if (isNaN(startDate.getTime())) {
       console.log('Invalid date:', date);
       return res.status(400).json({ message: 'Invalid date provided.' });
     }
-    if (!barbershopId) {
+    
+    let finalBarbershopId = barbershopId;
+    if (!finalBarbershopId) {
       console.log('Missing barbershopId, attempting to derive from services');
-      const firstService = await Service.findById(serviceIds[0]);
+      const firstService = await Service.findById(services[0]);
       if (!firstService || !firstService.barbershop) {
         return res.status(400).json({ message: 'Barbershop ID is required or cannot be derived.' });
       }
-      barbershopId = firstService.barbershop.toString();
+      finalBarbershopId = firstService.barbershop.toString();
     }
 
     // Fetch and validate services
-    const services = await Service.find({ _id: { $in: serviceIds } }).populate('personnel');
-    console.log('Found services:', services);
-    if (services.length !== serviceIds.length) {
+    const serviceDocuments = await Service.find({ _id: { $in: services } }).populate('personnel');
+    console.log('Found services:', serviceDocuments);
+    
+    if (serviceDocuments.length !== services.length) {
       return res.status(404).json({ message: 'One or more services not found.' });
     }
 
     // Ensure all services belong to the same barbershop
-    const barbershopIds = services.map(s => s.barbershop.toString());
-    if (new Set(barbershopIds).size > 1 || !barbershopIds.includes(barbershopId)) {
+    const barbershopIds = serviceDocuments.map(s => s.barbershop.toString());
+    if (new Set(barbershopIds).size > 1 || !barbershopIds.includes(finalBarbershopId)) {
       return res.status(400).json({ message: 'All services must belong to the selected barbershop.' });
     }
 
-    // Ensure all services are assigned to the same personnel
-    const personnelIds = services.map(s => Array.isArray(s.personnel) ? s.personnel[0]?._id : s.personnel?._id);
-    const uniquePersonnelIds = [...new Set(personnelIds)];
-    if (uniquePersonnelIds.length > 1) {
-      return res.status(400).json({ message: 'All services must be assigned to the same personnel.' });
-    }
-    const personnelId = uniquePersonnelIds[0];
+    // Determine personnel ID
+    let personnelId = personnel;
+    
     if (!personnelId) {
-      return res.status(400).json({ message: 'No personnel assigned to these services.' });
+      // Try to get personnel from services
+      const personnelIds = serviceDocuments.map(s => {
+        if (Array.isArray(s.personnel) && s.personnel.length > 0) {
+          return s.personnel[0]._id;
+        }
+        return s.personnel?._id;
+      }).filter(id => id);
+      
+      const uniquePersonnelIds = [...new Set(personnelIds.map(id => id.toString()))];
+      
+      if (uniquePersonnelIds.length > 1) {
+        return res.status(400).json({ message: 'All services must be assigned to the same personnel.' });
+      }
+      
+      personnelId = uniquePersonnelIds[0];
+    }
+    
+    if (!personnelId) {
+      return res.status(400).json({ message: 'Personnel is required for booking.' });
     }
 
     // Calculate end time based on total duration
-    const totalDuration = services.reduce((total, service) => total + (service.duration || 30), 0);
+    const totalDuration = serviceDocuments.reduce((total, service) => total + (service.duration || 30), 0);
     const endDate = new Date(startDate.getTime() + totalDuration * 60000);
 
     // Check for conflicts with both reservations and blocked slots
     const conflictingReservation = await Reservation.findOne({
       personnel: personnelId,
-      barbershop: barbershopId,
+      barbershop: finalBarbershopId,
       $or: [
         { date: { $lte: startDate }, endTime: { $gt: startDate } },
         { date: { $lt: endDate }, endTime: { $gte: endDate } },
       ],
     });
+    
     const conflictingBlockedSlot = await BlockedSlot.findOne({
       personnel: personnelId,
       $or: [
@@ -89,28 +112,34 @@ router.post('/', authMiddleware, async (req, res) => {
     // Create the new reservation
     const newReservation = await Reservation.create({
       client: clientId,
-      service: serviceIds,
+      service: services, // Store the array of service IDs
       personnel: personnelId,
-      barbershop: barbershopId,
+      barbershop: finalBarbershopId,
       date: startDate,
       endTime: endDate,
     });
 
+    // Populate the created reservation for response
+    const populatedReservation = await Reservation.findById(newReservation._id)
+      .populate('service', 'name duration price')
+      .populate('personnel', 'firstName lastName')
+      .populate('client', 'firstName lastName');
+
     // Notify personnel via push notification
-    const personnel = await User.findById(personnelId);
-    if (personnel?.pushToken && Expo.isExpoPushToken(personnel.pushToken)) {
+    const personnelUser = await User.findById(personnelId);
+    if (personnelUser?.pushToken && Expo.isExpoPushToken(personnelUser.pushToken)) {
       await expo.sendPushNotificationsAsync([
         {
-          to: personnel.pushToken,
+          to: personnelUser.pushToken,
           sound: 'default',
           title: '📅 New Reservation',
-          body: `New booking by ${req.user.role === 'client' ? req.user.id : 'Staff'} for ${services.map(s => s.name).join(', ')} at ${startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+          body: `New booking for ${serviceDocuments.map(s => s.name).join(', ')} at ${startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
           data: { reservationId: newReservation._id },
         },
       ]);
     }
 
-    res.status(201).json(newReservation);
+    res.status(201).json(populatedReservation);
   } catch (error) {
     console.error('❌ Server error during reservation:', error);
     res.status(500).json({ message: 'Server error. Could not create reservation.', error: error.message });
