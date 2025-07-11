@@ -3,6 +3,7 @@ const router = express.Router();
 const Barbershop = require('../models/barbershop');
 const Service = require('../models/Service');
 const Reservation = require('../models/Reservation');
+const User = require('../models/User'); // Assuming User model for personnel
 const authMiddleware = require('../middleware/authMiddleware');
 
 // Get unique barbershop categories
@@ -15,20 +16,23 @@ router.get('/categories', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
+
+// Get personnel by barbershop ID
 router.get('/:id/personnel', authMiddleware, async (req, res) => {
   try {
     const personnel = await User.find({
-      barbershop: req.params.barbershopId,
+      barbershop: req.params.id,
       role: 'personnel',
       status: 'approved',
     }).select('_id firstName lastName profileImageUrl');
-    console.log(`Returning personnel for barbershop ${req.params.barbershopId}:`, personnel);
+    console.log(`Returning personnel for barbershop ${req.params.id}:`, personnel);
     res.json(personnel);
   } catch (error) {
     console.error('Error fetching personnel:', error);
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
+
 // Get services by barbershop ID
 router.get('/:id/services', authMiddleware, async (req, res) => {
   try {
@@ -142,6 +146,40 @@ router.get('/services/barbershop/:id', async (req, res) => {
     res.json(services);
   } catch (error) {
     console.error('Error fetching services:', error);
+    res.status(500).json({ message: 'Server error', detail: error.message });
+  }
+});
+
+// Update a service by ID
+router.put('/services/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, category, description, price, duration, loyaltyPoints, personnel } = req.body;
+    const image = req.file; // Assuming multer or similar middleware for image handling
+
+    const updatedService = await Service.findByIdAndUpdate(
+      id,
+      {
+        name,
+        category,
+        description,
+        price,
+        duration,
+        loyaltyPoints,
+        personnel: personnel ? JSON.parse(personnel) : undefined,
+        imageUrl: image ? `/uploads/${image.filename}` : undefined,
+      },
+      { new: true, runValidators: true }
+    ).select('_id name description price duration loyaltyPoints imageUrl');
+
+    if (!updatedService) {
+      return res.status(404).json({ message: 'Service not found' });
+    }
+
+    console.log(`Service updated: ${id}`, updatedService);
+    res.status(200).json(updatedService);
+  } catch (error) {
+    console.error('Error updating service:', error);
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
