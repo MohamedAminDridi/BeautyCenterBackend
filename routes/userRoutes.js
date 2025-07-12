@@ -204,7 +204,7 @@ router.get('/barbershops/:barbershopId/personnel', authMiddleware, async (req, r
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
-router.get('barbershops/:id/pending-personnel', authMiddleware, async (req, res) => {
+router.get('/barbershops/:id/pending-personnel', authMiddleware, async (req, res) => {
   try {
     const pendingPersonnel = await User.find({
       barbershop: req.params.id,
