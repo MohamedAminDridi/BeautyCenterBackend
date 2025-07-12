@@ -239,7 +239,7 @@ router.put('/users/:id/status', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    console.log(`User ${id} status updated to ${status}:`, updatedUser);
+    console.log(`Database update result for user ${id}:`, updatedUser);
     res.status(200).json(updatedUser);
   } catch (error) {
     console.error('Error updating user status:', error);
