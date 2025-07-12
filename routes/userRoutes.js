@@ -219,7 +219,7 @@ router.get('/barbershops/:id/pending-personnel', authMiddleware, async (req, res
   }
 });
 
-router.put('/users/:id/status', authMiddleware, async (req, res) => {
+router.put('/:id/status', authMiddleware, async (req, res) => {
   console.log('Received status update request for user:', req.params.id, 'with status:', req.body.status);
   try {
     const { id } = req.params;
