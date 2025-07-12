@@ -45,6 +45,7 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
     weekStart.setDate(todayStart.getDate() - 7);
     const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
 
+    // Fetch bookings with appropriate time ranges
     const todaysBookings = await Reservation.find({
       date: { $gte: todayStart, $lte: todayEnd },
     })
@@ -67,13 +68,13 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
       .populate('barbershop');
 
     console.log('Todays Bookings with Population:', todaysBookings);
-    console.log('Monthly Bookings with Population:', monthlyBookings);
     console.log('Weekly Bookings with Population:', weeklyBookings);
+    console.log('Monthly Bookings with Population:', monthlyBookings);
 
     // Calculate revenue and commission for each barbershop
     const barbershopStats = await Barbershop.find().lean();
     const barbershopData = await Promise.all(barbershopStats.map(async (barbershop) => {
-      // Today revenue
+      // Today revenue (only July 12 bookings)
       const todayRevenue = todaysBookings
         .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
         .reduce((total, booking) => {
@@ -82,7 +83,7 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
           return total + servicePrices.reduce((sum, price) => sum + price, 0);
         }, 0);
 
-      // Week revenue
+      // Week revenue (July 5 to July 12 bookings)
       const weekRevenue = weeklyBookings
         .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
         .reduce((total, booking) => {
@@ -91,7 +92,7 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
           return total + servicePrices.reduce((sum, price) => sum + price, 0);
         }, 0);
 
-      // Month revenue
+      // Month revenue (July 1 to July 12 bookings)
       const monthRevenue = monthlyBookings
         .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
         .reduce((total, booking) => {
