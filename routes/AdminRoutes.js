@@ -171,7 +171,7 @@ router.patch('/reject-barbershop/:barbershopId', authMiddleware, authorizeRoles(
 });
 
 // Send notification to users
-router.post('/admin/send-notification', authMiddleware, authorizeRoles('admin'), async (req, res) => {
+router.post('/send-notification', authMiddleware, authorizeRoles('admin'), async (req, res) => {
   try {
     const { message, target } = req.body;
     if (!message) return res.status(400).json({ message: 'Message is required' });
