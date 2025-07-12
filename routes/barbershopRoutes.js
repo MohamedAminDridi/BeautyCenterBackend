@@ -184,4 +184,46 @@ router.put('/services/:id', authMiddleware, async (req, res) => {
   }
 });
 
+router.get('/:id/pending-personnel', authMiddleware, async (req, res) => {
+  try {
+    const pendingPersonnel = await User.find({
+      barbershop: req.params.id,
+      role: 'personnel',
+      status: 'pending',
+    }).select('_id firstName lastName profileImageUrl status barbershop');
+    console.log(`Returning pending personnel for barbershop ${req.params.id}:`, pendingPersonnel);
+    res.json(pendingPersonnel);
+  } catch (error) {
+    console.error('Error fetching pending personnel:', error);
+    res.status(500).json({ message: 'Server error', detail: error.message });
+  }
+});
+
+router.put('/users/:id/status', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status value' });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      { status },
+      { new: true, runValidators: true }
+    ).select('_id firstName lastName status');
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    console.log(`User ${id} status updated to ${status}:`, updatedUser);
+    res.status(200).json(updatedUser);
+  } catch (error) {
+    console.error('Error updating user status:', error);
+    res.status(500).json({ message: 'Server error', detail: error.message });
+  }
+});
+
 module.exports = router;
