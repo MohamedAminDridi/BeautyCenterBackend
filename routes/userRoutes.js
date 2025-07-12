@@ -229,15 +229,15 @@ router.put('/users/:id/status', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Invalid status value' });
     }
 
-    const updatedUser = await User.findByIdAndUpdate(
-      id,
-      { status },
-      { new: true, runValidators: true }
-    ).select('_id firstName lastName status');
-
-    if (!updatedUser) {
+    // Fetch the current user to verify
+    const user = await User.findById(id);
+    if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
+
+    // Perform the update and save explicitly
+    user.status = status;
+    const updatedUser = await user.save({ runValidators: true });
 
     console.log(`Database update result for user ${id}:`, updatedUser);
     res.status(200).json(updatedUser);
@@ -246,5 +246,6 @@ router.put('/users/:id/status', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
+
 
 module.exports = router;
