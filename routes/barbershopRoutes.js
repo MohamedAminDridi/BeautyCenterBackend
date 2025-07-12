@@ -3,8 +3,19 @@ const router = express.Router();
 const Barbershop = require('../models/barbershop');
 const Service = require('../models/Service');
 const Reservation = require('../models/Reservation');
-const User = require('../models/User'); // Assuming User model for personnel
+const User = require('../models/User');
 const authMiddleware = require('../middleware/authMiddleware');
+const multer = require('multer');
+const path = require('path');
+
+const storage = multer.diskStorage({
+  destination: './uploads/',
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname}`);
+  },
+});
+
+const upload = multer({ storage });
 
 // Get unique barbershop categories
 router.get('/categories', authMiddleware, async (req, res) => {
@@ -16,6 +27,7 @@ router.get('/categories', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
+
 // Get personnel by barbershop ID
 router.get('/:id/personnel', authMiddleware, async (req, res) => {
   try {
@@ -31,7 +43,6 @@ router.get('/:id/personnel', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
-
 
 // Get services by barbershop ID
 router.get('/:id/services', authMiddleware, async (req, res) => {
@@ -184,5 +195,23 @@ router.put('/services/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// Update barbershop logo
+router.put('/:id/logo', authMiddleware, upload.single('logo'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const barbershop = await Barbershop.findById(id);
+    if (!barbershop) {
+      return res.status(404).json({ message: 'Barbershop not found' });
+    }
+
+    barbershop.logoUrl = req.file ? `/uploads/${req.file.filename}` : barbershop.logoUrl;
+    await barbershop.save();
+
+    res.status(200).json({ message: 'Logo updated', logoUrl: barbershop.logoUrl });
+  } catch (error) {
+    console.error('Error updating logo:', error);
+    res.status(500).json({ message: 'Server error', detail: error.message });
+  }
+});
 
 module.exports = router;
