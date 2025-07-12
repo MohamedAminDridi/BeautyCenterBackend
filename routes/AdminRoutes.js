@@ -32,8 +32,6 @@ router.patch('/users/:id/role', authorizeRoles('admin'), async (req, res) => {
 // Dashboard endpoint
 router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, res) => {
   try {
-    console.log('Fetching dashboard data...');
-
     const clientsCount = await User.countDocuments({ role: 'client' });
     const personnelCount = await User.countDocuments({ role: 'personnel' });
     const servicesCount = await Service.countDocuments();
@@ -52,28 +50,28 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
     })
       .populate('client', 'firstName lastName')
       .populate('personnel', 'firstName lastName')
-      .populate('service', 'name price')
+      .populate('service', 'name price') // Ensure service is populated as an array
       .populate('barbershop')
       .sort({ date: 1 });
-    console.log('Todays bookings fetched:', todaysBookings.length);
 
     const monthlyBookings = await Reservation.find({
       date: { $gte: monthStart, $lte: todayEnd },
     })
       .populate('service', 'price')
       .populate('barbershop');
-    console.log('Monthly bookings fetched:', monthlyBookings.length);
 
     const weeklyBookings = await Reservation.find({
       date: { $gte: weekStart, $lte: todayEnd },
     })
       .populate('service', 'price')
       .populate('barbershop');
-    console.log('Weekly bookings fetched:', weeklyBookings.length);
 
-    // Fetch all services to use for price lookup
-    const serviceDocuments = await Service.find().select('_id price');
-    console.log('Service documents fetched:', serviceDocuments.length);
+    console.log('Todays Bookings with Population:', todaysBookings);
+    console.log('Monthly Bookings with Population:', monthlyBookings);
+    console.log('Weekly Bookings with Population:', weeklyBookings);
+
+    // Fetch all services to map IDs to prices
+    const allServices = await Service.find().select('_id price');
 
     // Calculate revenue and commission for each barbershop
     const barbershopStats = await Barbershop.find().lean();
@@ -81,33 +79,51 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
       const todayRevenue = todaysBookings
         .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
         .reduce((total, booking) => {
+          console.log('Processing Booking:', booking);
           const servicePrices = booking.service
-            .map(serviceId => {
-              const service = serviceDocuments.find(s => s._id.toString() === serviceId.toString());
-              return parseFloat(service?.price) || 0;
+            .map(service => {
+              if (service && service._id) {
+                const matchedService = allServices.find(s => s._id.toString() === service._id.toString());
+                console.log('Service ID:', service._id, 'Matched Service:', matchedService);
+                return parseFloat(matchedService?.price) || 0;
+              }
+              return 0;
             });
+          console.log('Service Prices for Booking:', servicePrices);
           return total + servicePrices.reduce((sum, price) => sum + price, 0);
         }, 0);
 
       const weekRevenue = weeklyBookings
         .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
         .reduce((total, booking) => {
+          console.log('Processing Booking:', booking);
           const servicePrices = booking.service
-            .map(serviceId => {
-              const service = serviceDocuments.find(s => s._id.toString() === serviceId.toString());
-              return parseFloat(service?.price) || 0;
+            .map(service => {
+              if (service && service._id) {
+                const matchedService = allServices.find(s => s._id.toString() === service._id.toString());
+                console.log('Service ID:', service._id, 'Matched Service:', matchedService);
+                return parseFloat(matchedService?.price) || 0;
+              }
+              return 0;
             });
+          console.log('Service Prices for Booking:', servicePrices);
           return total + servicePrices.reduce((sum, price) => sum + price, 0);
         }, 0);
 
       const monthRevenue = monthlyBookings
         .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
         .reduce((total, booking) => {
+          console.log('Processing Booking:', booking);
           const servicePrices = booking.service
-            .map(serviceId => {
-              const service = serviceDocuments.find(s => s._id.toString() === serviceId.toString());
-              return parseFloat(service?.price) || 0;
+            .map(service => {
+              if (service && service._id) {
+                const matchedService = allServices.find(s => s._id.toString() === service._id.toString());
+                console.log('Service ID:', service._id, 'Matched Service:', matchedService);
+                return parseFloat(matchedService?.price) || 0;
+              }
+              return 0;
             });
+          console.log('Service Prices for Booking:', servicePrices);
           return total + servicePrices.reduce((sum, price) => sum + price, 0);
         }, 0);
 
@@ -126,18 +142,24 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
 
     const revenueToday = todaysBookings.reduce((total, booking) => {
       const servicePrices = booking.service
-        .map(serviceId => {
-          const service = serviceDocuments.find(s => s._id.toString() === serviceId.toString());
-          return parseFloat(service?.price) || 0;
+        .map(service => {
+          if (service && service._id) {
+            const matchedService = allServices.find(s => s._id.toString() === service._id.toString());
+            return parseFloat(matchedService?.price) || 0;
+          }
+          return 0;
         });
       return total + servicePrices.reduce((sum, price) => sum + price, 0);
     }, 0);
 
     const revenueThisMonth = monthlyBookings.reduce((total, booking) => {
       const servicePrices = booking.service
-        .map(serviceId => {
-          const service = serviceDocuments.find(s => s._id.toString() === serviceId.toString());
-          return parseFloat(service?.price) || 0;
+        .map(service => {
+          if (service && service._id) {
+            const matchedService = allServices.find(s => s._id.toString() === service._id.toString());
+            return parseFloat(matchedService?.price) || 0;
+          }
+          return 0;
         });
       return total + servicePrices.reduce((sum, price) => sum + price, 0);
     }, 0);
