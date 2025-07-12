@@ -224,10 +224,10 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Create a new blocked slot
+// Create a new blocked slot
 router.post('/block', authMiddleware, async (req, res) => {
   try {
-    const { date, time, isMonthly, barbershopId } = req.body;
+    const { date, time, barbershopId } = req.body;
     if (!barbershopId) {
       return res.status(400).json({ message: 'Barbershop ID is required.' });
     }
@@ -239,13 +239,10 @@ router.post('/block', authMiddleware, async (req, res) => {
     startDate.setHours(hours, minutes, 0, 0);
     const endDate = new Date(startDate.getTime() + 30 * 60000);
 
-    const isAdmin = req.user.role === 'admin';
     const blockedSlot = new BlockedSlot({
       date: startDate,
       endTime: endDate,
-      personnel: isAdmin ? null : req.user.id,
-      isAdminBlock: isAdmin,
-      isMonthly,
+      personnel: req.user.id,
       barbershop: barbershopId,
     });
 
@@ -274,8 +271,9 @@ router.get('/blocked/day', authMiddleware, async (req, res) => {
 
     const blockedSlots = await BlockedSlot.find({
       barbershop: barbershopId,
+      personnel: req.user.id,
       date: { $gte: startDate, $lte: endDate },
-    }).select('date endTime personnel isAdminBlock');
+    }).select('date endTime personnel');
 
     res.status(200).json(blockedSlots);
   } catch (error) {
@@ -300,7 +298,7 @@ router.delete('/block', authMiddleware, async (req, res) => {
 
     const blockedSlot = await BlockedSlot.findOneAndDelete({
       date: startDate,
-      personnel: req.user.role === 'admin' ? null : req.user.id,
+      personnel: req.user.id,
       barbershop: barbershopId,
     });
 
