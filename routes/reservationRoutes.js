@@ -231,12 +231,12 @@ router.post('/block', authMiddleware, async (req, res) => {
     if (!barbershopId) {
       return res.status(400).json({ message: 'Barbershop ID is required.' });
     }
-    const startDate = new Date(date + 'T00:00:00+01:00'); // Explicitly set CET
+    const startDate = new Date(date);
     if (isNaN(startDate.getTime())) {
       return res.status(400).json({ message: 'Invalid date provided.' });
     }
     const [hours, minutes] = time.split(':').map(Number);
-    startDate.setUTCHours(hours, minutes, 0, 0);
+    startDate.setHours(hours, minutes, 0, 0);
     const endDate = new Date(startDate.getTime() + 30 * 60000);
 
     const blockedSlot = new BlockedSlot({
@@ -261,13 +261,13 @@ router.get('/blocked/day', authMiddleware, async (req, res) => {
     if (!date || !barbershopId) {
       return res.status(400).json({ message: 'Date and barbershop ID query parameters are required.' });
     }
-    const startDate = new Date(date + 'T00:00:00+01:00'); // Explicitly set CET
+    const startDate = new Date(date);
     if (isNaN(startDate.getTime())) {
       return res.status(400).json({ message: 'Invalid date provided.' });
     }
-    startDate.setUTCHours(0, 0, 0, 0);
+    startDate.setHours(0, 0, 0, 0);
     const endDate = new Date(startDate);
-    endDate.setUTCHours(23, 59, 59, 999);
+    endDate.setHours(23, 59, 59, 999);
 
     const blockedSlots = await BlockedSlot.find({
       barbershop: barbershopId,
@@ -289,12 +289,12 @@ router.delete('/block', authMiddleware, async (req, res) => {
     if (!barbershopId) {
       return res.status(400).json({ message: 'Barbershop ID is required.' });
     }
-    const startDate = new Date(date + 'T00:00:00+01:00'); // Explicitly set CET
+    const startDate = new Date(date);
     if (isNaN(startDate.getTime())) {
       return res.status(400).json({ message: 'Invalid date provided.' });
     }
     const [hours, minutes] = time.split(':').map(Number);
-    startDate.setUTCHours(hours, minutes, 0, 0);
+    startDate.setHours(hours, minutes, 0, 0);
 
     const blockedSlot = await BlockedSlot.findOneAndDelete({
       date: startDate,
