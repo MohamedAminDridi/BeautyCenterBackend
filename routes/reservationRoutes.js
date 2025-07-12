@@ -154,6 +154,7 @@ router.get('/upcoming', authMiddleware, async (req, res) => {
       client: req.user.id,
       date: { $gte: now },
     })
+          .populate('client', 'firstName lastName profileImageUrl phone')
       .populate('service', 'name')
       .populate('personnel', 'firstName lastName');
     console.log('📅 Upcoming reservations fetched:', upcomingReservations);
@@ -172,6 +173,7 @@ router.get('/past', authMiddleware, async (req, res) => {
       client: req.user.id,
       date: { $lt: now },
     })
+          .populate('client', 'firstName lastName profileImageUrl phone')
       .populate('service', 'name')
       .populate('personnel', 'firstName lastName');
     console.log('📅 Past reservations fetched:', pastReservations);
@@ -198,7 +200,7 @@ router.get('/personnel/:id', authMiddleware, async (req, res) => {
       query.date = { $gte: startDate, $lte: endDate };
     }
     const reservations = await Reservation.find(query)
-      .populate('client', 'firstName lastName profileImageUrl')
+      .populate('client', 'firstName lastName profileImageUrl phone')
       .populate('service', 'name duration')
       .select('date endTime client service personnel');
     res.json(reservations);
