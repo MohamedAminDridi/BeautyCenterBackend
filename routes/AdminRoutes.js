@@ -69,26 +69,51 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
     // Calculate revenue and commission for each barbershop
     const barbershopStats = await Barbershop.find().lean();
     const barbershopData = await Promise.all(barbershopStats.map(async (barbershop) => {
-      const todayRevenue = todaysBookings
-        .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
-        .reduce((total, booking) => total + (parseFloat(booking.service?.price) || 0), 0);
-      const weekRevenue = weeklyBookings
-        .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
-        .reduce((total, booking) => total + (parseFloat(booking.service?.price) || 0), 0);
-      const monthRevenue = monthlyBookings
-        .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
-        .reduce((total, booking) => total + (parseFloat(booking.service?.price) || 0), 0);
-      const commission = monthRevenue * 0.1; // 10% commission as an example
+  const todayRevenue = todaysBookings
+    .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
+    .reduce((total, booking) => {
+      const servicePrices = booking.service
+        .map(serviceId => {
+          const service = serviceDocuments.find(s => s._id.toString() === serviceId.toString());
+          return parseFloat(service?.price) || 0;
+        });
+      return total + servicePrices.reduce((sum, price) => sum + price, 0);
+    }, 0);
 
-      return {
-        _id: barbershop._id,
-        name: barbershop.name,
-        revenueDay: todayRevenue,
-        revenueWeek: weekRevenue,
-        revenueMonth: monthRevenue,
-        commission,
-      };
-    }));
+  const weekRevenue = weeklyBookings
+    .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
+    .reduce((total, booking) => {
+      const servicePrices = booking.service
+        .map(serviceId => {
+          const service = serviceDocuments.find(s => s._id.toString() === serviceId.toString());
+          return parseFloat(service?.price) || 0;
+        });
+      return total + servicePrices.reduce((sum, price) => sum + price, 0);
+    }, 0);
+
+  const monthRevenue = monthlyBookings
+    .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
+    .reduce((total, booking) => {
+      const servicePrices = booking.service
+        .map(serviceId => {
+          const service = serviceDocuments.find(s => s._id.toString() === serviceId.toString());
+          return parseFloat(service?.price) || 0;
+        });
+      return total + servicePrices.reduce((sum, price) => sum + price, 0);
+    }, 0);
+
+  const commission = monthRevenue * 0.1;
+
+  console.log(`Barbershop: ${barbershop.name}, Today: ${todayRevenue}, Week: ${weekRevenue}, Month: ${monthRevenue}, Commission: ${commission}`);
+  return {
+    _id: barbershop._id,
+    name: barbershop.name,
+    revenueDay: todayRevenue,
+    revenueWeek: weekRevenue,
+    revenueMonth: monthRevenue,
+    commission,
+  };
+}));
 
     const revenueToday = todaysBookings.reduce((total, booking) => total + (parseFloat(booking.service?.price) || 0), 0);
     const revenueThisMonth = monthlyBookings.reduce((total, booking) => total + (parseFloat(booking.service?.price) || 0), 0);
