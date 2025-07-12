@@ -32,6 +32,8 @@ router.patch('/users/:id/role', authorizeRoles('admin'), async (req, res) => {
 // Dashboard endpoint
 router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, res) => {
   try {
+    console.log('Fetching dashboard data...');
+
     const clientsCount = await User.countDocuments({ role: 'client' });
     const personnelCount = await User.countDocuments({ role: 'personnel' });
     const servicesCount = await Service.countDocuments();
@@ -53,25 +55,76 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
       .populate('service', 'name price')
       .populate('barbershop')
       .sort({ date: 1 });
+    console.log('Todays bookings fetched:', todaysBookings.length);
 
     const monthlyBookings = await Reservation.find({
       date: { $gte: monthStart, $lte: todayEnd },
     })
       .populate('service', 'price')
       .populate('barbershop');
+    console.log('Monthly bookings fetched:', monthlyBookings.length);
 
     const weeklyBookings = await Reservation.find({
       date: { $gte: weekStart, $lte: todayEnd },
     })
       .populate('service', 'price')
       .populate('barbershop');
+    console.log('Weekly bookings fetched:', weeklyBookings.length);
+
+    // Fetch all services to use for price lookup
+    const serviceDocuments = await Service.find().select('_id price');
+    console.log('Service documents fetched:', serviceDocuments.length);
 
     // Calculate revenue and commission for each barbershop
     const barbershopStats = await Barbershop.find().lean();
     const barbershopData = await Promise.all(barbershopStats.map(async (barbershop) => {
-  const todayRevenue = todaysBookings
-    .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
-    .reduce((total, booking) => {
+      const todayRevenue = todaysBookings
+        .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
+        .reduce((total, booking) => {
+          const servicePrices = booking.service
+            .map(serviceId => {
+              const service = serviceDocuments.find(s => s._id.toString() === serviceId.toString());
+              return parseFloat(service?.price) || 0;
+            });
+          return total + servicePrices.reduce((sum, price) => sum + price, 0);
+        }, 0);
+
+      const weekRevenue = weeklyBookings
+        .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
+        .reduce((total, booking) => {
+          const servicePrices = booking.service
+            .map(serviceId => {
+              const service = serviceDocuments.find(s => s._id.toString() === serviceId.toString());
+              return parseFloat(service?.price) || 0;
+            });
+          return total + servicePrices.reduce((sum, price) => sum + price, 0);
+        }, 0);
+
+      const monthRevenue = monthlyBookings
+        .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
+        .reduce((total, booking) => {
+          const servicePrices = booking.service
+            .map(serviceId => {
+              const service = serviceDocuments.find(s => s._id.toString() === serviceId.toString());
+              return parseFloat(service?.price) || 0;
+            });
+          return total + servicePrices.reduce((sum, price) => sum + price, 0);
+        }, 0);
+
+      const commission = monthRevenue * 0.1;
+
+      console.log(`Barbershop: ${barbershop.name}, Today: ${todayRevenue}, Week: ${weekRevenue}, Month: ${monthRevenue}, Commission: ${commission}`);
+      return {
+        _id: barbershop._id,
+        name: barbershop.name,
+        revenueDay: todayRevenue,
+        revenueWeek: weekRevenue,
+        revenueMonth: monthRevenue,
+        commission,
+      };
+    }));
+
+    const revenueToday = todaysBookings.reduce((total, booking) => {
       const servicePrices = booking.service
         .map(serviceId => {
           const service = serviceDocuments.find(s => s._id.toString() === serviceId.toString());
@@ -80,9 +133,7 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
       return total + servicePrices.reduce((sum, price) => sum + price, 0);
     }, 0);
 
-  const weekRevenue = weeklyBookings
-    .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
-    .reduce((total, booking) => {
+    const revenueThisMonth = monthlyBookings.reduce((total, booking) => {
       const servicePrices = booking.service
         .map(serviceId => {
           const service = serviceDocuments.find(s => s._id.toString() === serviceId.toString());
@@ -90,33 +141,6 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
         });
       return total + servicePrices.reduce((sum, price) => sum + price, 0);
     }, 0);
-
-  const monthRevenue = monthlyBookings
-    .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
-    .reduce((total, booking) => {
-      const servicePrices = booking.service
-        .map(serviceId => {
-          const service = serviceDocuments.find(s => s._id.toString() === serviceId.toString());
-          return parseFloat(service?.price) || 0;
-        });
-      return total + servicePrices.reduce((sum, price) => sum + price, 0);
-    }, 0);
-
-  const commission = monthRevenue * 0.1;
-
-  console.log(`Barbershop: ${barbershop.name}, Today: ${todayRevenue}, Week: ${weekRevenue}, Month: ${monthRevenue}, Commission: ${commission}`);
-  return {
-    _id: barbershop._id,
-    name: barbershop.name,
-    revenueDay: todayRevenue,
-    revenueWeek: weekRevenue,
-    revenueMonth: monthRevenue,
-    commission,
-  };
-}));
-
-    const revenueToday = todaysBookings.reduce((total, booking) => total + (parseFloat(booking.service?.price) || 0), 0);
-    const revenueThisMonth = monthlyBookings.reduce((total, booking) => total + (parseFloat(booking.service?.price) || 0), 0);
 
     // Calculate booking trends for most booked services (past 30 days)
     const oneMonthAgo = new Date(todayStart);
@@ -158,10 +182,11 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
     });
   } catch (err) {
     console.error('Dashboard error:', err);
-    res.status(500).json({ message: 'Failed to load dashboard data.' });
+    res.status(500).json({ message: 'Failed to load dashboard data.', error: err.message });
   }
 });
 
+// Rest of the routes remain unchanged...
 router.patch('/approve-owner/:userId', async (req, res) => {
   await User.findByIdAndUpdate(req.params.userId, { status: 'approved' });
   res.json({ message: 'Owner approved' });
