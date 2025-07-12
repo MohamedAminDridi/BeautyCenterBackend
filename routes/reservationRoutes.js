@@ -123,7 +123,7 @@ router.post('/', authMiddleware, async (req, res) => {
     const populatedReservation = await Reservation.findById(newReservation._id)
       .populate('service', 'name duration price')
       .populate('personnel', 'firstName lastName')
-      .populate('client', 'firstName lastName');
+      .populate('client', 'firstName lastName profileImageUrl phone');
 
     // Notify personnel via push notification
     const personnelUser = await User.findById(personnelId);
@@ -212,9 +212,9 @@ router.get('/personnel/:id', authMiddleware, async (req, res) => {
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const reservations = await Reservation.find()
-      .populate('client', 'firstName lastName profileImageUrl')
+      .populate('client', 'firstName lastName profileImageUrl phone')
       .populate('service', 'name')
-      .populate('personnel', 'firstName lastName');
+      .populate('personnel', 'firstName lastName ');
     res.status(200).json(reservations);
   } catch (err) {
     console.error('❌ Error fetching reservations:', err);
