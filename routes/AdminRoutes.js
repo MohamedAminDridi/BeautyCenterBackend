@@ -41,11 +41,23 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
 
-    const weekStart = new Date(todayStart);
-    weekStart.setDate(todayStart.getDate() - 7);
-    const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
+    // Set week range: Monday to Sunday
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0 (Sunday) to 6 (Saturday)
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Adjust to previous Monday
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() + diffToMonday);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6); // Next Sunday
+    weekEnd.setHours(23, 59, 59, 999);
 
-    // Fetch bookings with appropriate time ranges
+    // Set month range: Start of month to end of month
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    monthStart.setHours(0, 0, 0, 0);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    monthEnd.setHours(23, 59, 59, 999);
+
     const todaysBookings = await Reservation.find({
       date: { $gte: todayStart, $lte: todayEnd },
     })
@@ -56,13 +68,13 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
       .sort({ date: 1 });
 
     const monthlyBookings = await Reservation.find({
-      date: { $gte: monthStart, $lte: todayEnd },
+      date: { $gte: monthStart, $lte: monthEnd },
     })
       .populate('service', 'price')
       .populate('barbershop');
 
     const weeklyBookings = await Reservation.find({
-      date: { $gte: weekStart, $lte: todayEnd },
+      date: { $gte: weekStart, $lte: weekEnd },
     })
       .populate('service', 'price')
       .populate('barbershop');
@@ -71,33 +83,29 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
     console.log('Weekly Bookings with Population:', weeklyBookings);
     console.log('Monthly Bookings with Population:', monthlyBookings);
 
-    // Calculate revenue and commission for each barbershop
     const barbershopStats = await Barbershop.find().lean();
     const barbershopData = await Promise.all(barbershopStats.map(async (barbershop) => {
-      // Today revenue (only July 12 bookings)
       const todayRevenue = todaysBookings
         .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
         .reduce((total, booking) => {
           const servicePrices = booking.service.map(service => parseFloat(service?.price) || 0);
-          console.log(`Today - Booking ${booking._id}: Service Prices: ${servicePrices}`);
+          console.log(`Today - Booking ${booking._id}: Service Prices: ${servicePrices}, Date: ${booking.date}`);
           return total + servicePrices.reduce((sum, price) => sum + price, 0);
         }, 0);
 
-      // Week revenue (July 5 to July 12 bookings)
       const weekRevenue = weeklyBookings
         .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
         .reduce((total, booking) => {
           const servicePrices = booking.service.map(service => parseFloat(service?.price) || 0);
-          console.log(`Week - Booking ${booking._id}: Service Prices: ${servicePrices}`);
+          console.log(`Week - Booking ${booking._id}: Service Prices: ${servicePrices}, Date: ${booking.date}`);
           return total + servicePrices.reduce((sum, price) => sum + price, 0);
         }, 0);
 
-      // Month revenue (July 1 to July 12 bookings)
       const monthRevenue = monthlyBookings
         .filter(r => r.barbershop?._id.toString() === barbershop._id.toString())
         .reduce((total, booking) => {
           const servicePrices = booking.service.map(service => parseFloat(service?.price) || 0);
-          console.log(`Month - Booking ${booking._id}: Service Prices: ${servicePrices}`);
+          console.log(`Month - Booking ${booking._id}: Service Prices: ${servicePrices}, Date: ${booking.date}`);
           return total + servicePrices.reduce((sum, price) => sum + price, 0);
         }, 0);
 
@@ -124,12 +132,11 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
       return total + servicePrices.reduce((sum, price) => sum + price, 0);
     }, 0);
 
-    // Calculate booking trends for most booked services (past 30 days)
     const oneMonthAgo = new Date(todayStart);
     oneMonthAgo.setDate(todayStart.getDate() - 30);
 
     const bookingTrends = await Reservation.aggregate([
-      { $match: { date: { $gte: oneMonthAgo, $lte: todayEnd }, service: { $exists: true, $ne: null } } },
+      { $match: { date: { $gte: oneMonthAgo, $lte: monthEnd }, service: { $exists: true, $ne: null } } },
       { $group: { _id: "$service", count: { $sum: 1 } } },
       {
         $lookup: {
@@ -145,7 +152,6 @@ router.get('/dashboard', authMiddleware, authorizeRoles('admin'), async (req, re
       { $limit: 5 },
     ]);
 
-    // Calculate low stock items using aggregation
     const lowStockItems = await Product.aggregate([
       { $match: { $expr: { $lte: ["$quantity", "$alertThreshold"] } } },
       { $project: { _id: 1, name: 1, quantity: 1 } },
