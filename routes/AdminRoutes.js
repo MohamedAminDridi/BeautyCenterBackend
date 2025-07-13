@@ -245,5 +245,38 @@ router.post('/send-notification', authMiddleware, authorizeRoles('admin'), async
     res.status(500).json({ message: 'Failed to send notification' });
   }
 });
+// Add barbershops route
+router.get('/barbershops', authMiddleware, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const barbershops = await Barbershop.find()
+      .populate('owner', 'firstName lastName phone')
+      .lean();
+    res.json(barbershops);
+  } catch (error) {
+    console.error('Error fetching barbershops:', error);
+    res.status(500).json({ message: 'Error fetching barbershops' });
+  }
+});
 
+// Add services route
+router.get('/services', authMiddleware, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const services = await Service.find().lean();
+    res.json(services);
+  } catch (error) {
+    console.error('Error fetching services:', error);
+    res.status(500).json({ message: 'Error fetching services' });
+  }
+});
+
+// Add or update users route
+router.get('/users', authMiddleware, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const users = await User.find().lean();
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ message: 'Error fetching users' });
+  }
+});
 module.exports = router;
