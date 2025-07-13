@@ -23,6 +23,7 @@
     "mqtt": "^5.10.3",
     "multer": "^2.0.1",
     "multer-storage-cloudinary": "^4.0.0",
+    "node-cron": "^4.2.1",
     "smart_door_backend": "file:",
     "ws": "^8.18.0"
   },

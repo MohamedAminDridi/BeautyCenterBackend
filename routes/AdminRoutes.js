@@ -270,7 +270,7 @@ router.get('/services', authMiddleware, authorizeRoles('admin'), async (req, res
 });
 
 // Add or update users route
-router.get('/users', authMiddleware, authorizeRoles('admin'), async (req, res) => {
+router.get('/usersview', authMiddleware, authorizeRoles('admin'), async (req, res) => {
   try {
     const users = await User.find().lean();
     res.json(users);
