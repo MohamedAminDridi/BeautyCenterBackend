@@ -5,7 +5,7 @@ const Service = require("../models/Service");
 const User = require("../models/User");
 const BlockedSlot = require("../models/BlockedSlot");
 const authMiddleware = require("../middleware/authMiddleware");
-const { authorizeRoles } = require("../middleware/role"); // Add this import
+const { authorizeRoles } = require("../middleware/role"); // Import authorizeRoles
 const { Expo } = require("expo-server-sdk");
 const expo = new Expo();
 
@@ -310,6 +310,33 @@ router.delete("/block", authMiddleware, async (req, res) => {
   } catch (error) {
     console.error("Error unblocking slot:", error);
     res.status(500).json({ message: "Server error. Could not unblock slot.", error: error.message });
+  }
+});
+
+// Get client history (for personnel or admin)
+router.get("/client/:clientId", authMiddleware, authorizeRoles("personnel", "admin"), async (req, res) => {
+  try {
+    const clientId = req.params.clientId;
+    if (!clientId) {
+      return res.status(400).json({ message: "Client ID is required." });
+    }
+
+    // Fetch all reservations for the client
+    const now = new Date();
+    const clientReservations = await Reservation.find({ client: clientId })
+      .populate("client", "firstName lastName profileImageUrl phone")
+      .populate("service", "name duration price")
+      .populate("personnel", "firstName lastName")
+      .sort({ date: 1 }); // Sort by date ascending
+
+    if (!clientReservations || clientReservations.length === 0) {
+      return res.status(404).json({ message: "No reservations found for this client." });
+    }
+
+    res.status(200).json(clientReservations);
+  } catch (error) {
+    console.error("❌ Error fetching client history:", error);
+    res.status(500).json({ message: "Server error while fetching client history.", error: error.message });
   }
 });
 
