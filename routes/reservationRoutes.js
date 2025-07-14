@@ -176,21 +176,33 @@ router.get("/past", authMiddleware, async (req, res) => {
 // Get reservations for a specific personnel
 router.get("/personnel/:id", authMiddleware, async (req, res) => {
   try {
-    // Safeguard against undefined req.user
     if (!req.user) {
       return res.status(401).json({ message: "User not authenticated." });
     }
 
-    // Authorization check with default roles
     const userRoles = req.user.roles || [];
-    if (req.params.id !== req.user.id && !userRoles.includes("admin")) {
-      return res.status(403).json({ message: "Unauthorized access." });
+    const personnelId = req.params.id;
+    const barbershopId = req.query.barbershopId; // From frontend query
+
+    console.log('Authenticated User:', req.user.id, 'Roles:', userRoles, 'Requested Personnel:', personnelId, 'Barbershop ID:', barbershopId);
+
+    const personnel = await Personnel.findById(personnelId);
+    if (!personnel) {
+      return res.status(404).json({ message: "Personnel not found." });
+    }
+
+    // Allow clients if within the same barbershop, or personnel/admins directly
+    if (
+      personnelId !== req.user.id &&
+      !userRoles.includes("admin") &&
+      (!barbershopId || personnel.barbershop.toString() !== barbershopId)
+    ) {
+      return res.status(403).json({ message: "Unauthorized access. Personnel must belong to your selected barbershop." });
     }
 
     const { date } = req.query;
-    let query = { personnel: req.params.id };
+    let query = { personnel: personnelId };
 
-    // Validate and parse date
     if (date) {
       const startDate = new Date(date);
       if (isNaN(startDate.getTime())) {
@@ -202,26 +214,24 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
       query.date = { $gte: startDate, $lte: endDate };
     }
 
-    console.log("Querying reservations with:", query); // Debug log
+    console.log("Querying reservations with:", query);
 
-    // Fetch reservations with error handling for populate
     const reservations = await Reservation.find(query)
       .populate({
         path: "client",
         select: "firstName lastName profileImageUrl phone",
-        match: { _id: { $exists: true } }, // Ensure client exists
+        match: { _id: { $exists: true } },
       })
       .populate({
         path: "service",
         select: "name duration",
-        match: { _id: { $exists: true } }, // Ensure service exists
+        match: { _id: { $exists: true } },
       })
       .select("date endTime client service personnel")
       .sort({ date: 1 });
 
-    // Filter out documents where populate failed
     const validReservations = reservations.filter(r => r.client && r.service);
-    console.log("Fetched reservations:", validReservations); // Debug log
+    console.log("Fetched reservations:", validReservations);
 
     res.json(validReservations);
   } catch (err) {
