@@ -176,8 +176,14 @@ router.get("/past", authMiddleware, async (req, res) => {
 // Get reservations for a specific personnel
 router.get("/personnel/:id", authMiddleware, async (req, res) => {
   try {
-    // Authorization check
-    if (req.params.id !== req.user.id && !req.user.roles.includes("admin")) {
+    // Safeguard against undefined req.user
+    if (!req.user) {
+      return res.status(401).json({ message: "User not authenticated." });
+    }
+
+    // Authorization check with default roles
+    const userRoles = req.user.roles || [];
+    if (req.params.id !== req.user.id && !userRoles.includes("admin")) {
       return res.status(403).json({ message: "Unauthorized access." });
     }
 
@@ -208,7 +214,7 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
       .populate({
         path: "service",
         select: "name duration",
-        match: { $exists: true, _id: { $exists: true } }, // Ensure service exists
+        match: { _id: { $exists: true } }, // Ensure service exists
       })
       .select("date endTime client service personnel")
       .sort({ date: 1 });
