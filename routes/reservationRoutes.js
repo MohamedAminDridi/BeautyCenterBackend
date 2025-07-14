@@ -176,11 +176,15 @@ router.get("/past", authMiddleware, async (req, res) => {
 // Get reservations for a specific personnel
 router.get("/personnel/:id", authMiddleware, async (req, res) => {
   try {
+    // Authorization check
     if (req.params.id !== req.user.id && !req.user.roles.includes("admin")) {
       return res.status(403).json({ message: "Unauthorized access." });
     }
+
     const { date } = req.query;
     let query = { personnel: req.params.id };
+
+    // Validate and parse date
     if (date) {
       const startDate = new Date(date);
       if (isNaN(startDate.getTime())) {
@@ -191,15 +195,36 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
       endDate.setHours(23, 59, 59, 999);
       query.date = { $gte: startDate, $lte: endDate };
     }
+
+    console.log("Querying reservations with:", query); // Debug log
+
+    // Fetch reservations with error handling for populate
     const reservations = await Reservation.find(query)
-      .populate("client", "firstName lastName profileImageUrl phone")
-      .populate("service", "name duration")
+      .populate({
+        path: "client",
+        select: "firstName lastName profileImageUrl phone",
+        match: { _id: { $exists: true } }, // Ensure client exists
+      })
+      .populate({
+        path: "service",
+        select: "name duration",
+        match: { _id: { $exists: true } }, // Ensure service exists
+      })
       .select("date endTime client service personnel")
-      .sort({ date: 1 }); // Sort by date ascending
-    res.json(reservations);
+      .sort({ date: 1 });
+
+    // Filter out documents where populate failed
+    const validReservations = reservations.filter(r => r.client && r.service);
+    console.log("Fetched reservations:", validReservations); // Debug log
+
+    res.json(validReservations);
   } catch (err) {
     console.error("❌ Error fetching personnel reservations:", err);
-    res.status(500).json({ message: "Server error while fetching reservations.", error: err.message });
+    res.status(500).json({
+      message: "Server error while fetching reservations.",
+      error: err.message,
+      stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+    });
   }
 });
 
