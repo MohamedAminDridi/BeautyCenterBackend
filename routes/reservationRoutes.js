@@ -5,6 +5,7 @@ const Service = require("../models/Service");
 const User = require("../models/User");
 const BlockedSlot = require("../models/BlockedSlot");
 const authMiddleware = require("../middleware/authMiddleware");
+const { authorizeRoles } = require("../middleware/role"); // Add this import
 const { Expo } = require("expo-server-sdk");
 const expo = new Expo();
 
