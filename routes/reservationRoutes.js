@@ -174,9 +174,6 @@ router.get("/past", authMiddleware, async (req, res) => {
 });
 
 // Get reservations for a specific personnel
-const Personnel = require('../models/Personnel'); // Add this at the top
-const Reservation = require('../models/Reservation'); // Ensure this is also imported
-
 router.get("/personnel/:id", authMiddleware, async (req, res) => {
   try {
     if (!req.user) {
@@ -189,15 +186,19 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
 
     console.log('Authenticated User:', req.user.id, 'Roles:', userRoles, 'Requested Personnel:', personnelId, 'Barbershop ID:', barbershopId);
 
-    const personnel = await Personnel.findById(personnelId);
+    // Find the user and ensure they are personnel
+    const personnel = await User.findById(personnelId);
     if (!personnel) {
       return res.status(404).json({ message: "Personnel not found." });
+    }
+    if (personnel.role !== 'personnel') {
+      return res.status(400).json({ message: "The specified user is not a personnel." });
     }
 
     if (
       personnelId !== req.user.id &&
       !userRoles.includes("admin") &&
-      (!barbershopId || personnel.barbershop.toString() !== barbershopId)
+      (!barbershopId || personnel.barbershop?.toString() !== barbershopId)
     ) {
       return res.status(403).json({ message: "Unauthorized access. Personnel must belong to your selected barbershop." });
     }
