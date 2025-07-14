@@ -12,7 +12,6 @@ const reservationRoutes = require('./routes/reservationRoutes');
 const adminRoutes = require('./routes/AdminRoutes'); // adjust path if needed
 const loyaltyRoutes = require('./routes/loyaltyRoutes');
 const ownerRoutes = require('./routes/ownerRoutes'); // <-- new import here
-const notificationScheduler = require('./utils/notificationScheduler');
 
 
 require('dotenv').config();
