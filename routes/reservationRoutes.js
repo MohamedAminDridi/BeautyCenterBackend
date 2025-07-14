@@ -174,6 +174,9 @@ router.get("/past", authMiddleware, async (req, res) => {
 });
 
 // Get reservations for a specific personnel
+const Personnel = require('../models/Personnel'); // Add this at the top
+const Reservation = require('../models/Reservation'); // Ensure this is also imported
+
 router.get("/personnel/:id", authMiddleware, async (req, res) => {
   try {
     if (!req.user) {
@@ -182,7 +185,7 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
 
     const userRoles = req.user.roles || [];
     const personnelId = req.params.id;
-    const barbershopId = req.query.barbershopId; // From frontend query
+    const barbershopId = req.query.barbershopId;
 
     console.log('Authenticated User:', req.user.id, 'Roles:', userRoles, 'Requested Personnel:', personnelId, 'Barbershop ID:', barbershopId);
 
@@ -191,7 +194,6 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
       return res.status(404).json({ message: "Personnel not found." });
     }
 
-    // Allow clients if within the same barbershop, or personnel/admins directly
     if (
       personnelId !== req.user.id &&
       !userRoles.includes("admin") &&
