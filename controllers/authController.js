@@ -160,7 +160,7 @@ const loginUser = async (req, res) => {
         status: user.status,
         barbershop: user.barbershop, // Include for debugging
       },
-      barbershopId: user.barbershop?.toString() || null,
+      barbershopId: user.barbershop?.toString() || null, 
     };
     console.log('Login Response:', response); // Debug: Log response
     res.status(200).json(response);
