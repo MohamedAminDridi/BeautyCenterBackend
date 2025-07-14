@@ -208,7 +208,7 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
       .populate({
         path: "service",
         select: "name duration",
-        match: { _id: { $exists: true } }, // Ensure service exists
+        match: { $exists: true, _id: { $exists: true } }, // Ensure service exists
       })
       .select("date endTime client service personnel")
       .sort({ date: 1 });
