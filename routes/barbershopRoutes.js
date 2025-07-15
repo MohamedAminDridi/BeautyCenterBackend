@@ -116,21 +116,41 @@ router.get('/public', async (req, res) => {
     const barbershops = await Barbershop.find({ status: 'approved' })
       .select('_id name description location.coordinates location.address logoUrl category services status')
       .lean();
-    console.log('Returning public barbershops:', barbershops.map(shop => ({
+
+    // Transform and validate coordinates
+    const processedBarbershops = barbershops.map(shop => {
+      let coordinates = shop.location?.coordinates;
+      if (Array.isArray(coordinates) && coordinates.length === 2) {
+        coordinates = { latitude: coordinates[1], longitude: coordinates[0] }; // Convert [lon, lat] to { latitude, longitude }
+      } else if (coordinates && typeof coordinates === 'object' && coordinates.latitude && coordinates.longitude) {
+        coordinates = { latitude: coordinates.latitude, longitude: coordinates.longitude }; // Ensure object format
+      } else {
+        coordinates = null; // Invalid coordinates
+      }
+
+      return {
+        ...shop,
+        location: {
+          ...shop.location,
+          coordinates,
+        },
+      };
+    }).filter(shop => shop.location.coordinates !== null); // Filter out shops with invalid coordinates
+
+    console.log('Returning public barbershops:', processedBarbershops.map(shop => ({
       _id: shop._id,
       name: shop.name,
       logoUrl: shop.logoUrl,
       coordinates: shop.location?.coordinates,
       services: shop.services,
-      status: shop.status
+      status: shop.status,
     })));
-    res.json(barbershops);
+    res.json(processedBarbershops);
   } catch (error) {
     console.error('Error fetching public barbershops:', error);
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
-
 // Get barbershop details by ID
 router.get('/:id', async (req, res) => {
   try {
