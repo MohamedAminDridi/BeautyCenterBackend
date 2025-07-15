@@ -5,7 +5,7 @@ const Service = require("../models/Service");
 const User = require("../models/User");
 const BlockedSlot = require("../models/BlockedSlot");
 const authMiddleware = require("../middleware/authMiddleware");
-const { authorizeRoles } = require("../middleware/role"); // Import authorizeRoles
+const { authorizeRoles } = require("../middleware/role");
 const { Expo } = require("expo-server-sdk");
 const expo = new Expo();
 
@@ -79,6 +79,7 @@ router.post("/", authMiddleware, async (req, res) => {
         { date: { $lte: startDate }, endTime: { $gt: startDate } },
         { date: { $lt: endDate }, endTime: { $gte: endDate } },
       ],
+      status: "confirmed", // Only check confirmed reservations
     });
 
     const conflictingBlockedSlot = await BlockedSlot.findOne({
@@ -100,6 +101,7 @@ router.post("/", authMiddleware, async (req, res) => {
       barbershop: finalBarbershopId,
       date: startDate,
       endTime: endDate,
+      status: "pending", // Explicitly set to pending
     });
 
     const populatedReservation = await Reservation.findById(newReservation._id)
@@ -114,7 +116,7 @@ router.post("/", authMiddleware, async (req, res) => {
           {
             to: personnelUser.pushToken,
             sound: "default",
-            title: "📅 New Reservation",
+            title: "📅 New Reservation Pending",
             body: `New booking for ${serviceDocuments
               .map((s) => s.name)
               .join(", ")} at ${startDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
@@ -133,6 +135,62 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
+// Update reservation status and notify client
+router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (req, res) => {
+  try {
+    const { status } = req.body;
+    const reservationId = req.params.id;
+    const personnelId = req.user.id;
+
+    if (!["confirmed", "cancelled"].includes(status)) {
+      return res.status(400).json({ message: "Invalid status. Must be 'confirmed' or 'cancelled'." });
+    }
+
+    const reservation = await Reservation.findById(reservationId)
+      .populate("service", "name duration price")
+      .populate("client", "firstName lastName pushToken")
+      .populate("personnel", "firstName lastName");
+
+    if (!reservation) {
+      return res.status(404).json({ message: "Reservation not found." });
+    }
+
+    if (reservation.personnel._id.toString() !== personnelId) {
+      return res.status(403).json({ message: "Unauthorized to update this reservation." });
+    }
+
+    reservation.status = status;
+    await reservation.save();
+
+    // Notify client if reservation is confirmed
+    if (status === "confirmed" && reservation.client?.pushToken && Expo.isExpoPushToken(reservation.client.pushToken)) {
+      try {
+        await expo.sendPushNotificationsAsync([
+          {
+            to: reservation.client.pushToken,
+            sound: "default",
+            title: "📅 Booking Confirmed",
+            body: `Your booking for ${reservation.service
+              .map((s) => s.name)
+              .join(", ")} on ${new Date(reservation.date).toLocaleDateString()} at ${new Date(reservation.date).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })} has been confirmed by ${reservation.personnel.firstName}.`,
+            data: { reservationId: reservation._id },
+          },
+        ]);
+      } catch (pushError) {
+        console.error("Push notification to client failed:", pushError);
+      }
+    }
+
+    res.status(200).json(reservation);
+  } catch (error) {
+    console.error("❌ Error updating reservation status:", error);
+    res.status(500).json({ message: "Server error. Could not update reservation status.", error: error.message });
+  }
+});
+
 // Get upcoming reservations for the authenticated client
 router.get("/upcoming", authMiddleware, async (req, res) => {
   try {
@@ -144,7 +202,7 @@ router.get("/upcoming", authMiddleware, async (req, res) => {
       .populate("client", "firstName lastName profileImageUrl phone")
       .populate("service", "name")
       .populate("personnel", "firstName lastName")
-      .sort({ date: 1 }); // Sort by date ascending
+      .sort({ date: 1 });
     console.log("📅 Upcoming reservations fetched:", upcomingReservations);
     res.status(200).json(upcomingReservations);
   } catch (error) {
@@ -164,7 +222,7 @@ router.get("/past", authMiddleware, async (req, res) => {
       .populate("client", "firstName lastName profileImageUrl phone")
       .populate("service", "name")
       .populate("personnel", "firstName lastName")
-      .sort({ date: -1 }); // Sort by date descending
+      .sort({ date: -1 });
     console.log("📅 Past reservations fetched:", pastReservations);
     res.status(200).json(pastReservations);
   } catch (error) {
@@ -186,7 +244,6 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
 
     console.log('Authenticated User:', req.user.id, 'Roles:', userRoles, 'Requested Personnel:', personnelId, 'Barbershop ID:', barbershopId);
 
-    // Find the user and ensure they are personnel
     const personnel = await User.findById(personnelId);
     if (!personnel) {
       return res.status(404).json({ message: "Personnel not found." });
@@ -217,6 +274,11 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
       query.date = { $gte: startDate, $lte: endDate };
     }
 
+    // Include pending reservations only if the requesting user is the client
+    if (req.user.id !== personnelId) {
+      query.status = "confirmed";
+    }
+
     console.log("Querying reservations with:", query);
 
     const reservations = await Reservation.find(query)
@@ -230,7 +292,7 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
         select: "name duration",
         match: { _id: { $exists: true } },
       })
-      .select("date endTime client service personnel")
+      .select("date endTime client service personnel status")
       .sort({ date: 1 });
 
     const validReservations = reservations.filter(r => r.client && r.service);
@@ -254,7 +316,7 @@ router.get("/", authMiddleware, authorizeRoles("admin"), async (req, res) => {
       .populate("client", "firstName lastName profileImageUrl phone")
       .populate("service", "name")
       .populate("personnel", "firstName lastName")
-      .sort({ date: 1 }); // Sort by date ascending
+      .sort({ date: 1 });
     res.status(200).json(reservations);
   } catch (err) {
     console.error("❌ Error fetching reservations:", err);
@@ -365,13 +427,11 @@ router.get("/client/:clientId", authMiddleware, authorizeRoles("personnel", "adm
       return res.status(400).json({ message: "Client ID is required." });
     }
 
-    // Fetch all reservations for the client
-    const now = new Date();
     const clientReservations = await Reservation.find({ client: clientId })
       .populate("client", "firstName lastName profileImageUrl phone")
       .populate("service", "name duration price")
       .populate("personnel", "firstName lastName")
-      .sort({ date: 1 }); // Sort by date ascending
+      .sort({ date: 1 });
 
     if (!clientReservations || clientReservations.length === 0) {
       return res.status(404).json({ message: "No reservations found for this client." });
