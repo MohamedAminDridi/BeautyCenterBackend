@@ -170,6 +170,52 @@ const loginUser = async (req, res) => {
   }
 };
 
+// ADD THIS NEW ENDPOINT - Get current user info
+const getCurrentUser = async (req, res) => {
+  try {
+    // req.user is set by your authentication middleware
+    const user = await User.findById(req.user.id)
+      .select('firstName lastName phone email role barbershop profileImageUrl isActive status')
+      .populate('barbershop', 'name _id'); // Optionally populate barbershop info
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if user is still active and approved
+    if (user.status === 'pending') {
+      return res.status(403).json({ message: 'Account is pending approval' });
+    }
+
+    if (user.status === 'rejected') {
+      return res.status(403).json({ message: 'Account was rejected' });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({ message: 'Account is deactivated' });
+    }
+
+    const response = {
+      _id: user._id,
+      phone: user.phone,
+      email: user.email,
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      profileImageUrl: user.profileImageUrl,
+      isActive: user.isActive,
+      status: user.status,
+      barbershopId: user.barbershop?.toString() || null,
+      barbershop: user.barbershop, // Include populated barbershop info if needed
+    };
+
+    res.status(200).json(response);
+  } catch (err) {
+    console.error('Get current user error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
 const approveBarbershop = async (req, res) => {
   const { barbershopId, action } = req.body;
   if (req.user.role !== 'admin') {
@@ -233,6 +279,7 @@ const approvePersonnel = async (req, res) => {
 module.exports = {
   registerUser,
   loginUser,
+  getCurrentUser, // Export the new function
   approveBarbershop,
   approvePersonnel,
 };

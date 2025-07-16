@@ -5,7 +5,7 @@ const barbershopSchema = new mongoose.Schema({
   description: String,
   category: {
     type: String,
-    enum: ['barbershop', 'lavage', 'vidange', 'home', 'delivery'],
+    enum: ['barbershop', 'lavage', 'vidange', 'Terrain'],
     required: true
   },
   location: {
@@ -15,7 +15,7 @@ const barbershopSchema = new mongoose.Schema({
       longitude: Number
     }
   },
-  logoUrl: String,
+    logoUrl: String,
   documents: [{ type: String }], // Array of document URLs
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   services: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Service' }],
