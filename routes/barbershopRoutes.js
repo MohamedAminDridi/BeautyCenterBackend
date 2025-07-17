@@ -74,7 +74,7 @@ router.get('/:id/reservations/past', authMiddleware, async (req, res) => {
 
     // Fetch all reservations and filter invalid dates client-side
     const reservations = await Reservation.find({ barbershop: req.params.id })
-      .populate('service', 'name')
+      .populate('service', 'name price')
       .populate('personnel', 'firstName lastName')
       .populate('client', 'firstName lastName');
 
@@ -99,7 +99,7 @@ router.get('/:id/reservations/upcoming', authMiddleware, async (req, res) => {
 
     // Fetch all reservations and filter invalid dates client-side
     const reservations = await Reservation.find({ barbershop: req.params.id })
-      .populate('service', 'name')
+      .populate('service', 'name price')
       .populate('personnel', 'firstName lastName')
       .populate('client', 'firstName lastName');
 
