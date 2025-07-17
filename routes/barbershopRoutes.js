@@ -8,6 +8,13 @@ const authMiddleware = require('../middleware/authMiddleware');
 const multer = require('multer');
 const path = require('path');
 
+// Helper to validate and parse date
+const parseDate = (dateStr) => {
+  if (!dateStr) return null;
+  const date = new Date(dateStr);
+  return isNaN(date.getTime()) ? null : date; // Return null if invalid
+};
+
 const storage = multer.diskStorage({
   destination: './uploads/',
   filename: (req, file, cb) => {
@@ -62,9 +69,8 @@ router.get('/:id/services', authMiddleware, async (req, res) => {
 router.get('/:id/reservations/past', authMiddleware, async (req, res) => {
   try {
     const now = new Date(); // Current time in server timezone (e.g., UTC)
-    // Adjust for CET (UTC+2) if needed
     const cetOffset = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
-    const cetNow = new Date(now.getTime() + cetOffset);
+    const cetNow = new Date(now.getTime() + cetOffset); // Adjust to CET (05:51 PM CET)
 
     // Fetch all reservations and filter invalid dates client-side
     const reservations = await Reservation.find({ barbershop: req.params.id })
@@ -89,7 +95,7 @@ router.get('/:id/reservations/upcoming', authMiddleware, async (req, res) => {
   try {
     const now = new Date(); // Current time in server timezone (e.g., UTC)
     const cetOffset = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
-    const cetNow = new Date(now.getTime() + cetOffset);
+    const cetNow = new Date(now.getTime() + cetOffset); // Adjust to CET (05:51 PM CET)
 
     // Fetch all reservations and filter invalid dates client-side
     const reservations = await Reservation.find({ barbershop: req.params.id })
@@ -130,15 +136,14 @@ router.get('/public', async (req, res) => {
       .select('_id name description location.coordinates location.address logoUrl category services status')
       .lean();
 
-    // Transform and validate coordinates
     const processedBarbershops = barbershops.map(shop => {
       let coordinates = shop.location?.coordinates;
       if (Array.isArray(coordinates) && coordinates.length === 2) {
         coordinates = { latitude: coordinates[1], longitude: coordinates[0] }; // Convert [lon, lat] to { latitude, longitude }
       } else if (coordinates && typeof coordinates === 'object' && coordinates.latitude && coordinates.longitude) {
-        coordinates = { latitude: coordinates.latitude, longitude: coordinates.longitude }; // Ensure object format
+        coordinates = { latitude: coordinates.latitude, longitude: coordinates.longitude };
       } else {
-        coordinates = null; // Invalid coordinates
+        coordinates = null;
       }
 
       return {
@@ -148,7 +153,7 @@ router.get('/public', async (req, res) => {
           coordinates,
         },
       };
-    }).filter(shop => shop.location.coordinates !== null); // Filter out shops with invalid coordinates
+    }).filter(shop => shop.location.coordinates !== null);
 
     console.log('Returning public barbershops:', processedBarbershops.map(shop => ({
       _id: shop._id,
@@ -164,6 +169,7 @@ router.get('/public', async (req, res) => {
     res.status(500).json({ message: 'Server error', detail: error.message });
   }
 });
+
 // Get barbershop details by ID
 router.get('/:id', async (req, res) => {
   try {
