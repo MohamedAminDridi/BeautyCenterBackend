@@ -443,5 +443,64 @@ router.get("/client/:clientId", authMiddleware, authorizeRoles("personnel", "adm
     res.status(500).json({ message: "Server error while fetching client history.", error: error.message });
   }
 });
+router.get("/day/:date", authMiddleware, async (req, res) => {
+  try {
+    const { date } = req.params;
+    const { barbershopId, personnelId } = req.query; // Expect barbershopId and optionally personnelId as query params
+
+    if (!date) {
+      return res.status(400).json({ message: "Date parameter is required." });
+    }
+
+    const startOfDay = new Date(date);
+    if (isNaN(startOfDay.getTime())) {
+      return res.status(400).json({ message: "Invalid date provided." });
+    }
+    // Set to start of the day in UTC, assuming stored dates are UTC
+    startOfDay.setUTCHours(0, 0, 0, 0);
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setUTCDate(startOfDay.getUTCDate() + 1); // Go to next day, 00:00:00 UTC
+
+    let query = {
+      date: { $gte: startOfDay, $lt: endOfDay }, // Reservations that start on this day
+      // Optionally add status filter, e.g., only 'confirmed' or 'pending'
+      // status: 'confirmed',
+    };
+
+    // If barbershopId is provided, filter by it
+    if (barbershopId) {
+        query.barbershop = barbershopId;
+    } else {
+        // If no barbershopId, and the user is owner/personnel, they should provide it
+        // Or you might derive it from req.user if they are associated with only one barbershop.
+        // For simplicity, let's assume it should always be provided for this route.
+        console.warn("barbershopId missing in query for /day/:date route. This might return too many results.");
+    }
+
+    // If a specific personnel is requested (e.g., for their personal calendar view)
+    if (personnelId) {
+        query.personnel = personnelId;
+    } else if (req.user.role === 'personnel' && !req.user.isAdminBlock) { // If personnel is viewing their own, and it's not a block
+        query.personnel = req.user.id;
+    }
+
+
+    console.log("Fetching reservations for day with query:", query);
+
+    const reservations = await Reservation.find(query)
+      .populate("client", "firstName lastName profileImageUrl phone")
+      .populate("service", "name duration price") // Populate price for revenue calculation on client-side
+      .populate("personnel", "firstName lastName profileImageUrl")
+      .sort({ date: 1 });
+
+    // Filter out reservations where client or service population failed (optional, client might filter too)
+    const validReservations = reservations.filter(r => r.client && r.service);
+
+    res.status(200).json(validReservations);
+  } catch (error) {
+    console.error("❌ Error fetching reservations for day:", error);
+    res.status(500).json({ message: "Server error. Could not fetch reservations for the specified day.", error: error.message });
+  }
+});
 
 module.exports = router;
