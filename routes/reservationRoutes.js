@@ -203,7 +203,7 @@ router.get("/upcoming", authMiddleware, async (req, res) => {
       .populate("service", "name")
       .populate("personnel", "firstName lastName")
       .sort({ date: 1 });
-    console.log("📅 Upcoming reservations fetched:", upcomingReservations);
+    // console.log("📅 Upcoming reservations fetched:", upcomingReservations);
     res.status(200).json(upcomingReservations);
   } catch (error) {
     console.error("❌ Error fetching upcoming reservations:", error);
@@ -223,7 +223,7 @@ router.get("/past", authMiddleware, async (req, res) => {
       .populate("service", "name")
       .populate("personnel", "firstName lastName")
       .sort({ date: -1 });
-    console.log("📅 Past reservations fetched:", pastReservations);
+    // console.log("📅 Past reservations fetched:", pastReservations);
     res.status(200).json(pastReservations);
   } catch (error) {
     console.error("❌ Error fetching past reservations:", error);
@@ -242,7 +242,7 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
     const personnelId = req.params.id;
     const barbershopId = req.query.barbershopId;
 
-    console.log('Authenticated User:', req.user.id, 'Roles:', userRoles, 'Requested Personnel:', personnelId, 'Barbershop ID:', barbershopId);
+    // console.log('Authenticated User:', req.user.id, 'Roles:', userRoles, 'Requested Personnel:', personnelId, 'Barbershop ID:', barbershopId);
 
     const personnel = await User.findById(personnelId);
     if (!personnel) {
@@ -279,7 +279,7 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
       query.status = "confirmed";
     }
 
-    console.log("Querying reservations with:", query);
+    // console.log("Querying reservations with:", query);
 
     const reservations = await Reservation.find(query)
       .populate({
@@ -296,7 +296,7 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
       .sort({ date: 1 });
 
     const validReservations = reservations.filter(r => r.client && r.service);
-    console.log("Fetched reservations:", validReservations);
+    // console.log("Fetched reservations:", validReservations);
 
     res.json(validReservations);
   } catch (err) {
@@ -478,7 +478,7 @@ router.get("/day/:date", authMiddleware, async (req, res) => {
         query.personnel = req.user.id;
     }
 
-    console.log("Fetching reservations for day with query:", query);
+    // console.log("Fetching reservations for day with query:", query);
 
     const reservations = await Reservation.find(query)
       .populate("client", "firstName lastName profileImageUrl phone")
