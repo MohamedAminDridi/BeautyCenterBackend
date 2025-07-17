@@ -149,7 +149,7 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
     const reservation = await Reservation.findById(reservationId)
       .populate("service", "name duration price")
       .populate("client", "firstName lastName pushToken")
-      .populate("personnel", "firstName lastName profileImageUrl phone");
+      .populate("personnel", "firstName lastName");
 
     if (!reservation) {
       return res.status(404).json({ message: "Reservation not found." });
@@ -201,7 +201,7 @@ router.get("/upcoming", authMiddleware, async (req, res) => {
     })
       .populate("client", "firstName lastName profileImageUrl phone")
       .populate("service", "name")
-      .populate("personnel", "firstName lastName profileImageUrl phone")
+      .populate("personnel", "firstName lastName")
       .sort({ date: 1 });
     console.log("📅 Upcoming reservations fetched:", upcomingReservations);
     res.status(200).json(upcomingReservations);
@@ -221,7 +221,7 @@ router.get("/past", authMiddleware, async (req, res) => {
     })
       .populate("client", "firstName lastName profileImageUrl phone")
       .populate("service", "name")
-      .populate("personnel", "firstName lastName phone")
+      .populate("personnel", "firstName lastName")
       .sort({ date: -1 });
     console.log("📅 Past reservations fetched:", pastReservations);
     res.status(200).json(pastReservations);
@@ -315,7 +315,7 @@ router.get("/", authMiddleware, authorizeRoles("admin"), async (req, res) => {
     const reservations = await Reservation.find()
       .populate("client", "firstName lastName profileImageUrl phone")
       .populate("service", "name")
-      .populate("personnel", "firstName lastName profileImageUrl phone")
+      .populate("personnel", "firstName lastName")
       .sort({ date: 1 });
     res.status(200).json(reservations);
   } catch (err) {
@@ -430,7 +430,7 @@ router.get("/client/:clientId", authMiddleware, authorizeRoles("personnel", "adm
     const clientReservations = await Reservation.find({ client: clientId })
       .populate("client", "firstName lastName profileImageUrl phone")
       .populate("service", "name duration price")
-      .populate("personnel", "firstName lastName profileImageUrl phone")
+      .populate("personnel", "firstName lastName")
       .sort({ date: 1 });
 
     if (!clientReservations || clientReservations.length === 0) {
@@ -483,7 +483,7 @@ router.get("/day/:date", authMiddleware, async (req, res) => {
     const reservations = await Reservation.find(query)
       .populate("client", "firstName lastName profileImageUrl phone")
       .populate("service", "name duration price")
-      .populate("personnel", "firstName lastName profileImageUrl phone")
+      .populate("personnel", "firstName lastName profileImageUrl")
       .sort({ date: 1 });
 
     const validReservations = reservations.filter(r => r.client && r.service);
