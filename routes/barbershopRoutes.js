@@ -61,38 +61,51 @@ router.get('/:id/services', authMiddleware, async (req, res) => {
 // Get past reservations for a specific barbershop
 router.get('/:id/reservations/past', authMiddleware, async (req, res) => {
   try {
-    const now = new Date();
-    const pastReservations = await Reservation.find({
-      barbershop: req.params.id,
-      date: { $lt: now },
-    })
+    const now = new Date(); // Current time in server timezone (e.g., UTC)
+    // Adjust for CET (UTC+2) if needed
+    const cetOffset = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+    const cetNow = new Date(now.getTime() + cetOffset);
+
+    // Fetch all reservations and filter invalid dates client-side
+    const reservations = await Reservation.find({ barbershop: req.params.id })
       .populate('service', 'name')
       .populate('personnel', 'firstName lastName')
       .populate('client', 'firstName lastName');
+
+    const pastReservations = reservations
+      .map(res => ({ ...res._doc, date: parseDate(res.date) })) // Parse and validate date
+      .filter(res => res.date && res.date < cetNow); // Filter out invalid or future dates
+
     console.log(`📅 Past reservations fetched for barbershop ${req.params.id}:`, pastReservations);
     res.status(200).json(pastReservations);
   } catch (error) {
     console.error('❌ Error fetching past reservations:', error);
-    res.status(500).json({ message: 'Failed to fetch past reservations.' });
+    res.status(500).json({ message: 'Failed to fetch past reservations.', detail: error.message });
   }
 });
 
 // Get upcoming reservations for a specific barbershop
 router.get('/:id/reservations/upcoming', authMiddleware, async (req, res) => {
   try {
-    const now = new Date();
-    const upcomingReservations = await Reservation.find({
-      barbershop: req.params.id,
-      date: { $gte: now },
-    })
+    const now = new Date(); // Current time in server timezone (e.g., UTC)
+    const cetOffset = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+    const cetNow = new Date(now.getTime() + cetOffset);
+
+    // Fetch all reservations and filter invalid dates client-side
+    const reservations = await Reservation.find({ barbershop: req.params.id })
       .populate('service', 'name')
       .populate('personnel', 'firstName lastName')
       .populate('client', 'firstName lastName');
+
+    const upcomingReservations = reservations
+      .map(res => ({ ...res._doc, date: parseDate(res.date) })) // Parse and validate date
+      .filter(res => res.date && res.date >= cetNow); // Filter out invalid or past dates
+
     console.log(`📅 Upcoming reservations fetched for barbershop ${req.params.id}:`, upcomingReservations);
     res.status(200).json(upcomingReservations);
   } catch (error) {
     console.error('❌ Error fetching upcoming reservations:', error);
-    res.status(500).json({ message: 'Failed to fetch upcoming reservations.' });
+    res.status(500).json({ message: 'Failed to fetch upcoming reservations.', detail: error.message });
   }
 });
 
