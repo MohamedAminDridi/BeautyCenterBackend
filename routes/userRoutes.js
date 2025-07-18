@@ -33,9 +33,9 @@ router.get('/', async (req, res) => {
 router.get('/me', authMiddleware, async (req, res) => {
   try {
     console.log('req.user from authMiddleware:', req.user); // Debug: Log JWT payload
-    const user = await User.findById(req.user._id).select('firstName lastName role barbershop profileImageUrl email phone isActive status');
+    const user = await User.findById(req.user.id).select('firstName lastName role barbershop profileImageUrl email phone isActive status');
     if (!user) {
-      console.log('User not found for ID:', req.user._id);
+      console.log('User not found for ID:', req.user.id);
       return res.status(404).json({ error: 'User not found' });
     }
 
@@ -132,7 +132,7 @@ router.delete('/:id', async (req, res) => {
 // PUT /me (update authenticated user with image)
 router.put('/me', authMiddleware, upload.single('profileImage'), async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized: no user ID in token' });
     }
