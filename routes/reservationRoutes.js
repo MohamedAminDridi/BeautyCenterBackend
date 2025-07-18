@@ -201,7 +201,7 @@ router.get("/upcoming", authMiddleware, async (req, res) => {
     })
       .populate("client", "firstName lastName profileImageUrl phone")
       .populate("service", "name")
-      .populate("personnel", "firstName lastName")
+      .populate("personnel", "firstName lastName phone")
       .sort({ date: 1 });
     // console.log("📅 Upcoming reservations fetched:", upcomingReservations);
     res.status(200).json(upcomingReservations);
@@ -289,7 +289,7 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
       })
       .populate({
         path: "service",
-        select: "name duration",
+        select: "name duration price",
         match: { _id: { $exists: true } },
       })
       .select("date endTime client service personnel status")

@@ -43,7 +43,7 @@ router.get('/:id/personnel', authMiddleware, async (req, res) => {
       role: 'personnel',
       status: 'approved',
     }).select('_id firstName lastName profileImageUrl status barbershop');
-    console.log(`Returning personnel for barbershop ${req.params.id}:`, personnel);
+    // console.log(`Returning personnel for barbershop ${req.params.id}:`, personnel);
     res.json(personnel);
   } catch (error) {
     console.error('Error fetching personnel:', error);
@@ -57,7 +57,7 @@ router.get('/:id/services', authMiddleware, async (req, res) => {
     const services = await Service.find({ barbershop: req.params.id })
       .select('_id name description price duration loyaltyPoints imageUrl')
       .lean();
-    console.log(`Returning services for barbershop ${req.params.id}:`, services);
+    // console.log(`Returning services for barbershop ${req.params.id}:`, services);
     res.json(services);
   } catch (error) {
     console.error('Error fetching services:', error);
@@ -82,7 +82,7 @@ router.get('/:id/reservations/past', authMiddleware, async (req, res) => {
       .map(res => ({ ...res._doc, date: parseDate(res.date) })) // Parse and validate date
       .filter(res => res.date && res.date < cetNow); // Filter out invalid or future dates
 
-    console.log(`📅 Past reservations fetched for barbershop ${req.params.id}:`, pastReservations);
+    // console.log(`📅 Past reservations fetched for barbershop ${req.params.id}:`, pastReservations);
     res.status(200).json(pastReservations);
   } catch (error) {
     console.error('❌ Error fetching past reservations:', error);
@@ -107,7 +107,7 @@ router.get('/:id/reservations/upcoming', authMiddleware, async (req, res) => {
       .map(res => ({ ...res._doc, date: parseDate(res.date) })) // Parse and validate date
       .filter(res => res.date && res.date >= cetNow); // Filter out invalid or past dates
 
-    console.log(`📅 Upcoming reservations fetched for barbershop ${req.params.id}:`, upcomingReservations);
+    // console.log(`📅 Upcoming reservations fetched for barbershop ${req.params.id}:`, upcomingReservations);
     res.status(200).json(upcomingReservations);
   } catch (error) {
     console.error('❌ Error fetching upcoming reservations:', error);
@@ -155,14 +155,14 @@ router.get('/public', async (req, res) => {
       };
     }).filter(shop => shop.location.coordinates !== null);
 
-    console.log('Returning public barbershops:', processedBarbershops.map(shop => ({
-      _id: shop._id,
-      name: shop.name,
-      logoUrl: shop.logoUrl,
-      coordinates: shop.location?.coordinates,
-      services: shop.services,
-      status: shop.status,
-    })));
+    // console.log('Returning public barbershops:', processedBarbershops.map(shop => ({
+    //   _id: shop._id,
+    //   name: shop.name,
+    //   logoUrl: shop.logoUrl,
+    //   coordinates: shop.location?.coordinates,
+    //   services: shop.services,
+    //   status: shop.status,
+    // })));
     res.json(processedBarbershops);
   } catch (error) {
     console.error('Error fetching public barbershops:', error);
@@ -192,7 +192,7 @@ router.get('/services/barbershop/:id', async (req, res) => {
     const services = await Service.find({ barbershop: req.params.id })
       .select('_id name description price duration loyaltyPoints imageUrl')
       .lean();
-    console.log(`Returning services for barbershop ${req.params.id}:`, services);
+    // console.log(`Returning services for barbershop ${req.params.id}:`, services);
     res.json(services);
   } catch (error) {
     console.error('Error fetching services:', error);
@@ -226,7 +226,7 @@ router.put('/services/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Service not found' });
     }
 
-    console.log(`Service updated: ${id}`, updatedService);
+    // console.log(`Service updated: ${id}`, updatedService);
     res.status(200).json(updatedService);
   } catch (error) {
     console.error('Error updating service:', error);
