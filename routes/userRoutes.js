@@ -32,30 +32,30 @@ router.get('/', async (req, res) => {
 // GET /me (authenticated user data)
 router.get('/me', authMiddleware, async (req, res) => {
   try {
-    console.log('req.user from authMiddleware:', req.user); // Debug: Log JWT payload
-    const user = await User.findById(req.user.id).select('firstName lastName role barbershop profileImageUrl email phone isActive status');
+    // UPDATED: Added setupComplete and personnelAvailability to the selection
+    const user = await User.findById(req.user.id).select('firstName lastName role barbershop profileImageUrl email phone isActive status setupComplete personnelAvailability');
     if (!user) {
-      console.log('User not found for ID:', req.user.id);
       return res.status(404).json({ error: 'User not found' });
     }
 
-    console.log('Raw user data from DB:', user); // Debug: Log raw user document
     const barbershopId = user.barbershop ? user.barbershop.toString() : null;
 
+    // UPDATED: The full user object is now returned, including new fields
     const response = {
       _id: user._id,
       firstName: user.firstName,
       lastName: user.lastName,
       role: user.role,
       barbershopId,
-      barbershop: user.barbershop, // Include for debugging
+      barbershop: user.barbershop,
       profileImageUrl: user.profileImageUrl,
       email: user.email,
       phone: user.phone,
       isActive: user.isActive,
       status: user.status,
+      setupComplete: user.setupComplete,
+      personnelAvailability: user.personnelAvailability,
     };
-    console.log('ME Response:', response); // Debug: Log response
     res.json(response);
   } catch (err) {
     console.error('Error in /me endpoint:', err);
@@ -167,6 +167,45 @@ router.put('/me', authMiddleware, upload.single('profileImage'), async (req, res
   }
 });
 
+// =================================================================
+// NEW ROUTE to update personnel availability
+// =================================================================
+router.put('/me/availability', authMiddleware, async (req, res) => {
+    if (req.user.role !== 'personnel') {
+        return res.status(403).json({ message: 'Forbidden: Only personnel can set availability.' });
+    }
+
+    const { availability } = req.body;
+
+    if (!Array.isArray(availability) || availability.length !== 7) {
+        return res.status(400).json({ message: 'Invalid availability data provided. Must be an array of 7 days.' });
+    }
+
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
+        user.personnelAvailability = availability;
+        user.setupComplete = true; // Mark setup as complete
+
+        await user.save();
+
+        res.json({
+            message: 'Availability updated successfully.',
+            personnelAvailability: user.personnelAvailability,
+        });
+    } catch (err) {
+        console.error('Error updating availability:', err);
+        if (err.name === 'ValidationError') {
+            return res.status(400).json({ message: 'Validation failed', errors: err.errors });
+        }
+        res.status(500).json({ message: 'Server error while updating availability.' });
+    }
+});
+
+
 router.get('/personnel', async (req, res) => {
   try {
     const personnel = await User.find({ role: 'personnel' });
@@ -190,6 +229,7 @@ router.put('/:id/push-token', authMiddleware, async (req, res) => {
     res.status(500).json({ error: 'Failed to save push token' });
   }
 });
+
 router.get('/barbershops/:barbershopId/personnel', authMiddleware, async (req, res) => {
   try {
     const personnel = await User.find({
@@ -197,7 +237,6 @@ router.get('/barbershops/:barbershopId/personnel', authMiddleware, async (req, r
       role: 'personnel',
       status: 'approved',
     }).select('_id firstName lastName profileImageUrl');
-    console.log(`Returning personnel for barbershop ${req.params.barbershopId}:`, personnel);
     res.json(personnel);
   } catch (error) {
     console.error('Error fetching personnel:', error);
@@ -211,7 +250,6 @@ router.get('/barbershops/:id/pending-personnel', authMiddleware, async (req, res
       role: 'personnel',
       status: 'pending',
     }).select('_id firstName lastName profileImageUrl status barbershop');
-    console.log(`Returning pending personnel for barbershop ${req.params.id}:`, pendingPersonnel);
     res.json(pendingPersonnel);
   } catch (error) {
     console.error('Error fetching pending personnel:', error);
@@ -220,7 +258,6 @@ router.get('/barbershops/:id/pending-personnel', authMiddleware, async (req, res
 });
 
 router.put('/:id/statusapprove', authMiddleware, async (req, res) => {
-  console.log('Received status update request for user:', req.params.id, 'with status:', req.body.status);
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -228,18 +265,15 @@ router.put('/:id/statusapprove', authMiddleware, async (req, res) => {
     if (!['approved', 'rejected'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status value' });
     }
-
-    // Fetch the current user to verify
+    
     const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Perform the update and save explicitly
     user.status = status;
     const updatedUser = await user.save({ runValidators: true });
 
-    console.log(`Database update result for user ${id}:`, updatedUser);
     res.status(200).json(updatedUser);
   } catch (error) {
     console.error('Error updating user status:', error);
