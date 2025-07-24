@@ -26,7 +26,7 @@ router.get("/reservations/me", authorizeRoles("personnel"), async (req, res) => 
 router.patch("/reservations/:id", authorizeRoles("personnel"), async (req, res) => {
   try {
     const { status } = req.body;
-    if (!["approved", "rejected"].includes(status)) {
+    if (!["confirmed", "cancelled"].includes(status)) {
       return res.status(400).json({ message: "Invalid status value. Use 'accepted' or 'rejected'." });
     }
     const myProducts = await Product.find({ personnel: req.user._id });
