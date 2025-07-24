@@ -276,7 +276,7 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
 
     // Include pending reservations only if the requesting user is the client
     if (req.user.id !== personnelId) {
-      query.status = "confirmed";
+    query.status = { $in: ['pending', 'confirmed'] };
     }
 
     // console.log("Querying reservations with:", query);
