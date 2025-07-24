@@ -52,6 +52,12 @@ router.post('/validate', auth, async (req, res) => {
 router.post('/redeem', async (req, res) => {
   const { code, userId } = req.body;
 
+  // --- FIX: Add a validation check for the userId ---
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ error: 'Invalid user ID format' });
+  }
+  // --- End of new validation check ---
+
   try {
     const trusted = await TrustedCode.findOne({ code, isActive: true });
     if (!trusted) {
@@ -59,20 +65,22 @@ router.post('/redeem', async (req, res) => {
     }
 
     const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    // Store trusted barbershop in user document
-    user.trustedBarbershops = user.trustedBarbershops || [];
-    if (!user.trustedBarbershops.includes(trusted.barbershop.toString())) {
-      user.trustedBarbershops.push(trusted.barbershop);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
     }
 
-    await user.save();
+    // Check if barbershop is already in the trusted list to avoid duplicates
+    const isAlreadyTrusted = user.trustedBarbershops.some(id => id.equals(trusted.barbershop));
+
+    if (!isAlreadyTrusted) {
+      user.trustedBarbershops.push(trusted.barbershop);
+      await user.save();
+    }
 
     return res.json({ message: 'You are now a trusted client!' });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error during code redemption' });
   }
 });
 module.exports = router;
