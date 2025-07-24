@@ -139,36 +139,57 @@ router.post("/", authMiddleware, async (req, res) => {
 router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (req, res) => {
   try {
     const { status } = req.body;
-    // It expects 'confirmed' or 'cancelled' to match your schema
+    const reservationId = req.params.id;
+    const personnelId = req.user.id;
+
     if (!["confirmed", "cancelled"].includes(status)) {
-      return res.status(400).json({ message: "Invalid status. Use 'confirmed' or 'cancelled'." });
+      return res.status(400).json({ message: "Invalid status. Must be 'confirmed' or 'cancelled'." });
     }
 
-    const reservation = await Reservation.findById(req.params.id);
+    const reservation = await Reservation.findById(reservationId)
+      .populate("service", "name duration price")
+      .populate("client", "firstName lastName pushToken")
+      .populate("personnel", "firstName lastName");
 
     if (!reservation) {
       return res.status(404).json({ message: "Reservation not found." });
     }
 
-    // Ensure the personnel updating the reservation is the one assigned to it
-    if (reservation.personnel.toString() !== req.user.id) {
-        return res.status(403).json({ message: "Unauthorized to update this reservation." });
+    if (reservation.personnel._id.toString() !== personnelId) {
+      return res.status(403).json({ message: "Unauthorized to update this reservation." });
     }
 
     reservation.status = status;
     await reservation.save();
 
-    const populatedReservation = await Reservation.findById(reservation._id)
-        .populate("client", "firstName lastName")
-        .populate("service", "name");
+    // Notify client if reservation is confirmed
+    if (status === "confirmed" && reservation.client?.pushToken && Expo.isExpoPushToken(reservation.client.pushToken)) {
+      try {
+        await expo.sendPushNotificationsAsync([
+          {
+            to: reservation.client.pushToken,
+            sound: "default",
+            title: "📅 Booking Confirmed",
+            body: `Your booking for ${reservation.service
+              .map((s) => s.name)
+              .join(", ")} on ${new Date(reservation.date).toLocaleDateString()} at ${new Date(reservation.date).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })} has been confirmed by ${reservation.personnel.firstName}.`,
+            data: { reservationId: reservation._id },
+          },
+        ]);
+      } catch (pushError) {
+        console.error("Push notification to client failed:", pushError);
+      }
+    }
 
-    res.json({ message: `Reservation ${status}`, reservation: populatedReservation });
+    res.status(200).json(reservation);
   } catch (error) {
-    console.error("Error updating reservation status:", error);
-    res.status(500).json({ message: "Server error while updating reservation." });
+    console.error("❌ Error updating reservation status:", error);
+    res.status(500).json({ message: "Server error. Could not update reservation status.", error: error.message });
   }
 });
-
 
 // Get upcoming reservations for the authenticated client
 router.get("/upcoming", authMiddleware, async (req, res) => {
