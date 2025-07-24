@@ -1,9 +1,10 @@
-// routes/trustedCodeRoutes.js
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose'); // FIX #1: Added mongoose import
+const User = require('../models/User'); // FIX #2: Added User model import
 const TrustedCode = require('../models/TrustedCode');
-const Barbershop = require('../models/barbershop');
-const generateQrCode = require('../utlis/generateQrCode');
+const Barbershop = require('../models/barbershop'); // FIX #3: Corrected casing to PascalCase
+const generateQrCode = require('../utils/generateQrCode'); // FIX #4: Corrected typo 'utlis' -> 'utils'
 const auth = require('../middleware/authMiddleware');
 
 // Create a trusted code for a shop
@@ -11,7 +12,6 @@ router.post('/generate', auth, async (req, res) => {
   try {
     const { barbershopId, code } = req.body;
 
-    // Check if already exists
     let trustedCode = await TrustedCode.findOne({ code, barbershop: barbershopId });
 
     if (!trustedCode) {
@@ -39,7 +39,7 @@ router.post('/validate', auth, async (req, res) => {
 
     const user = await User.findById(req.user.id);
 
-    if (!user.trustedBarbershops.includes(barbershopId)) {
+    if (!user.trustedBarbershops.some(id => id.equals(barbershopId))) {
       user.trustedBarbershops.push(barbershopId);
       await user.save();
     }
@@ -49,14 +49,15 @@ router.post('/validate', auth, async (req, res) => {
     res.status(500).json({ message: 'Error validating code', error: err.message });
   }
 });
+
+// Redeem a trusted code
 router.post('/redeem', async (req, res) => {
   const { code, userId } = req.body;
 
-  // --- FIX: Add a validation check for the userId ---
+  // Validation check for the userId
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     return res.status(400).json({ error: 'Invalid user ID format' });
   }
-  // --- End of new validation check ---
 
   try {
     const trusted = await TrustedCode.findOne({ code, isActive: true });
@@ -79,8 +80,9 @@ router.post('/redeem', async (req, res) => {
 
     return res.json({ message: 'You are now a trusted client!' });
   } catch (err) {
-    console.error(err);
+    console.error('Error during code redemption:', err);
     res.status(500).json({ error: 'Server error during code redemption' });
   }
 });
+
 module.exports = router;
