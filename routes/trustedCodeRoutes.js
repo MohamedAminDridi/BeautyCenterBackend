@@ -52,17 +52,25 @@ router.post('/validate', auth, async (req, res) => {
 
 // Redeem a trusted code
 router.post('/redeem', async (req, res) => {
-  const { code, userId } = req.body;
+  // Destructure all three pieces of info from the request
+  const { code, userId, barbershopId } = req.body;
 
-  // Validation check for the userId
-  if (!mongoose.Types.ObjectId.isValid(userId)) {
-    return res.status(400).json({ error: 'Invalid user ID format' });
+  // Validate inputs
+  if (!mongoose.Types.ObjectId.isValid(userId) || !mongoose.Types.ObjectId.isValid(barbershopId)) {
+    return res.status(400).json({ error: 'Invalid user or barbershop ID format' });
   }
 
   try {
-    const trusted = await TrustedCode.findOne({ code, isActive: true });
+    // Find a code that matches the code string AND the specific barbershop ID
+    const trusted = await TrustedCode.findOne({
+      code,
+      barbershop: barbershopId, // This line ensures the code belongs to the shop
+      isActive: true,
+    });
+
     if (!trusted) {
-      return res.status(400).json({ error: 'Invalid or expired code' });
+      // The code is wrong for this specific shop
+      return res.status(400).json({ error: 'Invalid or expired code for this shop' });
     }
 
     const user = await User.findById(userId);
@@ -70,7 +78,7 @@ router.post('/redeem', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Check if barbershop is already in the trusted list to avoid duplicates
+    // Check if the user is already trusted for this shop
     const isAlreadyTrusted = user.trustedBarbershops.some(id => id.equals(trusted.barbershop));
 
     if (!isAlreadyTrusted) {
@@ -78,7 +86,8 @@ router.post('/redeem', async (req, res) => {
       await user.save();
     }
 
-    return res.json({ message: 'You are now a trusted client!' });
+    return res.json({ message: `You are now a trusted client of this shop!` });
+
   } catch (err) {
     console.error('Error during code redemption:', err);
     res.status(500).json({ error: 'Server error during code redemption' });
