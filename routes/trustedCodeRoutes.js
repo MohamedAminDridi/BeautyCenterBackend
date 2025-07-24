@@ -4,7 +4,7 @@ const mongoose = require('mongoose'); // FIX #1: Added mongoose import
 const User = require('../models/User'); // FIX #2: Added User model import
 const TrustedCode = require('../models/TrustedCode');
 const Barbershop = require('../models/barbershop'); // FIX #3: Corrected casing to PascalCase
-const generateQrCode = require('../utils/generateQrCode'); // FIX #4: Corrected typo 'utlis' -> 'utils'
+const generateQrCode = require('../utlis/generateQrCode'); // FIX #4: Corrected typo 'utlis' -> 'utils'
 const auth = require('../middleware/authMiddleware');
 
 // Create a trusted code for a shop
