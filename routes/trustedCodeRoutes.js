@@ -85,7 +85,8 @@ router.post('/redeem', async (req, res) => {
       user.trustedBarbershops.push(trusted.barbershop);
       await user.save();
     }
-
+    trusted.isActive = false;
+    await trusted.save();
     return res.json({ message: `You are now a trusted client of this shop!` });
 
   } catch (err) {
