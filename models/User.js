@@ -37,6 +37,8 @@ const UserSchema = new mongoose.Schema({
   pushToken: { type: String },
   status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'approved' },
   barbershop: { type: mongoose.Schema.Types.ObjectId, ref: 'Barbershop' },
+  trustedBarbershops: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Barbershop' }],
+
   setupComplete: { type: Boolean, default: false },
   personnelAvailability: {
     type: [personnelDailyAvailabilitySchema],
