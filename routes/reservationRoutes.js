@@ -187,29 +187,29 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
 
       if (status === "confirmed") {
         try {
-          await expo.sendPushNotificationsAsync([{
+          const pushResponse = await expo.sendPushNotificationsAsync([{
             to: client.pushToken,
             sound: "default",
             title: "✅ Booking Confirmed!",
             body: `Your booking for ${serviceNames} at ${reservationTime} has been confirmed by ${reservation.personnel.firstName}.`,
             data: { reservationId: reservation._id },
           }]);
-          console.log(`Notification sent to client ${client._id}: ${client.pushToken}`);
+          console.log(`Notification sent to client ${client._id}: ${client.pushToken}`, pushResponse);
         } catch (pushError) {
-          console.error(`Failed to send confirmed notification to client ${client._id}:`, pushError);
+          console.error(`Failed to send confirmed notification to client ${client._id}:`, pushError.message);
         }
       } else if (status === "cancelled") {
         try {
-          await expo.sendPushNotificationsAsync([{
+          const pushResponse = await expo.sendPushNotificationsAsync([{
             to: client.pushToken,
             sound: "default",
             title: "❌ Booking Cancelled",
             body: `Unfortunately, your booking for ${serviceNames} at ${reservationTime} has been cancelled.`,
             data: { reservationId: reservation._id },
           }]);
-          console.log(`Notification sent to client ${client._id}: ${client.pushToken}`);
+          console.log(`Notification sent to client ${client._id}: ${client.pushToken}`, pushResponse);
         } catch (pushError) {
-          console.error(`Failed to send cancelled notification to client ${client._id}:`, pushError);
+          console.error(`Failed to send cancelled notification to client ${client._id}:`, pushError.message);
         }
       }
     }
@@ -222,7 +222,7 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
 
     res.status(200).json(reservation);
   } catch (error) {
-    console.error("❌ Error updating reservation status:", error);
+    console.error("❌ Error updating reservation status:", error.message);
     res.status(500).json({ message: "Server error. Could not update reservation status.", error: error.message });
   }
 });
