@@ -106,8 +106,8 @@ router.post("/", authMiddleware, async (req, res) => {
 
     const populatedReservation = await Reservation.findById(newReservation._id)
       .populate("service", "name duration price")
-      .populate("personnel", "firstName lastName")
-      .populate("client", "firstName lastName profileImageUrl phone");
+      .populate("personnel", "firstName lastName pushToken")
+      .populate("client", "firstName lastName profileImageUrl phone pushToken");
 
     const personnelUser = await User.findById(personnelId);
     if (personnelUser?.pushToken && Expo.isExpoPushToken(personnelUser.pushToken)) {
@@ -123,10 +123,12 @@ router.post("/", authMiddleware, async (req, res) => {
             data: { reservationId: newReservation._id },
           },
         ]);
-        console.log("Notification sent to personnel:", personnelUser.pushToken);
+        console.log(`Notification sent to personnel ${personnelId}: ${personnelUser.pushToken}`);
       } catch (pushError) {
-        console.error("Push notification failed:", pushError);
+        console.error(`Failed to send notification to personnel ${personnelId}:`, pushError);
       }
+    } else {
+      console.warn(`No valid pushToken for personnel ${personnelId}`);
     }
 
     res.status(201).json(populatedReservation);
@@ -139,9 +141,11 @@ router.post("/", authMiddleware, async (req, res) => {
 // Update reservation status and notify client
 router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status, clientId } = req.body;
     const reservationId = req.params.id;
     const personnelId = req.user.id;
+
+    console.log(`Updating reservation ${reservationId} to status ${status} by personnel ${personnelId}`);
 
     if (!["confirmed", "cancelled"].includes(status)) {
       return res.status(400).json({ message: "Invalid status. Must be 'confirmed' or 'cancelled'." });
@@ -153,11 +157,18 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
       .populate("personnel", "firstName lastName pushToken");
 
     if (!reservation) {
+      console.warn(`Reservation ${reservationId} not found`);
       return res.status(404).json({ message: "Reservation not found." });
     }
 
     if (reservation.personnel._id.toString() !== personnelId) {
+      console.warn(`Unauthorized: Personnel ${personnelId} does not match reservation personnel ${reservation.personnel._id}`);
       return res.status(403).json({ message: "Unauthorized to update this reservation." });
+    }
+
+    if (clientId && reservation.client._id.toString() !== clientId) {
+      console.warn(`Client ID mismatch: Provided ${clientId}, expected ${reservation.client._id}`);
+      return res.status(400).json({ message: "Client ID does not match reservation." });
     }
 
     reservation.status = status;
@@ -207,15 +218,17 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
       }
     }
 
-    // Avoid sending notifications to personnel for status updates
-    if (reservation.personnel.pushToken && status === "confirmed") {
-      console.log(`Skipping notification to personnel ${reservation.personnel._id} for status update`);
+    // Log personnel pushToken status (for debugging)
+    if (reservation.personnel.pushToken) {
+      console.log(`Personnel ${reservation.personnel._id} has pushToken ${reservation.personnel.pushToken}, but no notification sent for status update`);
+    } else {
+      console.log(`No pushToken for personnel ${reservation.personnel._id}`);
     }
 
     res.status(200).json(reservation);
   } catch (error) {
     console.error("❌ Error updating reservation status:", error);
-    res.status(500).json({ message: "Server error. Could not update reservation status." });
+    res.status(500).json({ message: "Server error. Could not update reservation status.", error: error.message });
   }
 });
 
@@ -305,7 +318,7 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
     const reservations = await Reservation.find(query)
       .populate({
         path: "client",
-        select: "firstName lastName profileImageUrl phone",
+        select: "firstName lastName profileImageUrl phone pushToken",
         match: { _id: { $exists: true } },
       })
       .populate({
@@ -332,7 +345,7 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
 router.get("/", authMiddleware, authorizeRoles("admin"), async (req, res) => {
   try {
     const reservations = await Reservation.find()
-      .populate("client", "firstName lastName profileImageUrl phone")
+      .populate("client", "firstName lastName profileImageUrl phone pushToken")
       .populate("service", "name")
       .populate("personnel", "firstName lastName")
       .sort({ date: 1 });
@@ -447,7 +460,7 @@ router.get("/client/:clientId", authMiddleware, authorizeRoles("personnel", "adm
     }
 
     const clientReservations = await Reservation.find({ client: clientId })
-      .populate("client", "firstName lastName profileImageUrl phone")
+      .populate("client", "firstName lastName profileImageUrl phone pushToken")
       .populate("service", "name duration price")
       .populate("personnel", "firstName lastName")
       .sort({ date: 1 });
@@ -497,7 +510,7 @@ router.get("/day/:date", authMiddleware, async (req, res) => {
     }
 
     const reservations = await Reservation.find(query)
-      .populate("client", "firstName lastName profileImageUrl phone")
+      .populate("client", "firstName lastName profileImageUrl phone pushToken")
       .populate("service", "name duration price")
       .populate("personnel", "firstName lastName profileImageUrl")
       .sort({ date: 1 });

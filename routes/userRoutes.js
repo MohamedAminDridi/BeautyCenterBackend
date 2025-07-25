@@ -16,8 +16,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// ========== Routes ==========
-
 // GET users (by role)
 router.get('/', async (req, res) => {
   try {
@@ -32,7 +30,7 @@ router.get('/', async (req, res) => {
 // GET /me (authenticated user data)
 router.get('/me', authMiddleware, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('firstName lastName role barbershop profileImageUrl email phone isActive status setupComplete personnelAvailability scheduleOverrides');
+    const user = await User.findById(req.user.id).select('firstName lastName phone email role barbershop profileImageUrl isActive status setupComplete personnelAvailability scheduleOverrides pushToken');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -43,25 +41,20 @@ router.get('/me', authMiddleware, async (req, res) => {
   }
 });
 
-// =================================================================
-// MISSING ROUTE: Get a single user by their ID
-// This is required for the BookingScreen to fetch a personnel's schedule.
-// =================================================================
+// GET user by ID
 router.get('/:id', authMiddleware, async (req, res) => {
-    try {
-        const user = await User.findById(req.params.id)
-            .select('-password'); // Exclude the password for security
-
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-        res.json(user);
-    } catch (err) {
-        console.error('Error fetching user by ID:', err);
-        res.status(500).json({ message: 'Server error' });
+  try {
+    const user = await User.findById(req.params.id)
+      .select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
     }
+    res.json(user);
+  } catch (err) {
+    console.error('Error fetching user by ID:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
 });
-
 
 // PUT update role
 router.put('/users/:id/role', async (req, res) => {
@@ -91,6 +84,7 @@ router.put('/:id/status', async (req, res) => {
   }
 });
 
+// PUT toggle user
 router.put('/:id/toggle', async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
@@ -152,60 +146,84 @@ router.put('/me', authMiddleware, upload.single('profileImage'), async (req, res
   }
 });
 
+// NEW: Update push token for authenticated user
+router.put('/me/push-token', authMiddleware, async (req, res) => {
+  try {
+    const { pushToken } = req.body;
+    if (!pushToken) {
+      return res.status(400).json({ message: 'Push token is required' });
+    }
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { pushToken },
+      { new: true }
+    );
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    console.log(`Push token updated for user ${req.user.id}: ${pushToken}`);
+    res.json({ message: 'Push token saved' });
+  } catch (err) {
+    console.error('Failed to save push token:', err);
+    res.status(500).json({ message: 'Failed to save push token', error: err.message });
+  }
+});
+
 // Route to update personnel weekly availability template
 router.put('/me/availability', authMiddleware, async (req, res) => {
-    const { availability } = req.body;
-    if (!Array.isArray(availability) || availability.length !== 7) {
-        return res.status(400).json({ message: 'Invalid availability data provided. Must be an array of 7 days.' });
+  const { availability } = req.body;
+  if (!Array.isArray(availability) || availability.length !== 7) {
+    return res.status(400).json({ message: 'Invalid availability data provided. Must be an array of 7 days.' });
+  }
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) { return res.status(404).json({ message: 'User not found.' }); }
+    user.personnelAvailability = availability;
+    user.setupComplete = true;
+    await user.save();
+    res.json({
+      message: 'Availability updated successfully.',
+      personnelAvailability: user.personnelAvailability,
+    });
+  } catch (err) {
+    console.error('Error updating availability:', err);
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ message: 'Validation failed', errors: err.errors });
     }
-    try {
-        const user = await User.findById(req.user.id);
-        if (!user) { return res.status(404).json({ message: 'User not found.' });}
-        user.personnelAvailability = availability;
-        user.setupComplete = true;
-        await user.save();
-        res.json({
-            message: 'Availability updated successfully.',
-            personnelAvailability: user.personnelAvailability,
-        });
-    } catch (err) {
-        console.error('Error updating availability:', err);
-        if (err.name === 'ValidationError') {
-            return res.status(400).json({ message: 'Validation failed', errors: err.errors });
-        }
-        res.status(500).json({ message: 'Server error while updating availability.' });
-    }
+    res.status(500).json({ message: 'Server error while updating availability.' });
+  }
 });
 
 // Route to add or update a schedule override for a specific date
 router.post('/me/schedule-overrides', authMiddleware, async (req, res) => {
-    const { overrideData } = req.body;
-    if (!overrideData || !overrideData.date) {
-        return res.status(400).json({ message: 'Invalid override data provided. Date is required.' });
+  const { overrideData } = req.body;
+  if (!overrideData || !overrideData.date) {
+    return res.status(400).json({ message: 'Invalid override data provided. Date is required.' });
+  }
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) { return res.status(404).json({ message: 'User not found.' }); }
+    const existingOverrideIndex = user.scheduleOverrides.findIndex(ov => ov.date === overrideData.date);
+    if (existingOverrideIndex > -1) {
+      user.scheduleOverrides[existingOverrideIndex] = overrideData;
+    } else {
+      user.scheduleOverrides.push(overrideData);
     }
-    try {
-        const user = await User.findById(req.user.id);
-        if (!user) { return res.status(404).json({ message: 'User not found.' }); }
-        const existingOverrideIndex = user.scheduleOverrides.findIndex(ov => ov.date === overrideData.date);
-        if (existingOverrideIndex > -1) {
-            user.scheduleOverrides[existingOverrideIndex] = overrideData;
-        } else {
-            user.scheduleOverrides.push(overrideData);
-        }
-        await user.save();
-        res.status(200).json({
-            message: 'Schedule override saved successfully.',
-            scheduleOverrides: user.scheduleOverrides
-        });
-    } catch (err) {
-        console.error('Error saving schedule override:', err);
-        if (err.name === 'ValidationError') {
-            return res.status(400).json({ message: 'Validation failed', errors: err.errors });
-        }
-        res.status(500).json({ message: 'Server error while saving override.' });
+    await user.save();
+    res.status(200).json({
+      message: 'Schedule override saved successfully.',
+      scheduleOverrides: user.scheduleOverrides
+    });
+  } catch (err) {
+    console.error('Error saving schedule override:', err);
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ message: 'Validation failed', errors: err.errors });
     }
+    res.status(500).json({ message: 'Server error while saving override.' });
+  }
 });
 
+// Get personnel
 router.get('/personnel', async (req, res) => {
   try {
     const personnel = await User.find({ role: 'personnel' });
@@ -215,19 +233,25 @@ router.get('/personnel', async (req, res) => {
   }
 });
 
+// DEPRECATED: Use /me/push-token instead
 router.put('/:id/push-token', authMiddleware, async (req, res) => {
   const { id } = req.params;
   const { pushToken } = req.body;
   try {
-    const user = await User.findByIdAndUpdate(id, { pushToken });
+    if (id !== req.user.id) {
+      return res.status(403).json({ message: 'Unauthorized to update this user' });
+    }
+    const user = await User.findByIdAndUpdate(id, { pushToken }, { new: true });
     if (!user) return res.status(404).json({ message: 'User not found' });
+    console.log(`Push token updated for user ${id}: ${pushToken}`);
     res.json({ message: 'Push token saved' });
   } catch (err) {
     console.error('Failed to save push token:', err);
-    res.status(500).json({ error: 'Failed to save push token' });
+    res.status(500).json({ message: 'Failed to save push token', error: err.message });
   }
 });
 
+// Get personnel by barbershop
 router.get('/barbershops/:barbershopId/personnel', authMiddleware, async (req, res) => {
   try {
     const personnel = await User.find({
@@ -242,6 +266,7 @@ router.get('/barbershops/:barbershopId/personnel', authMiddleware, async (req, r
   }
 });
 
+// Get pending personnel by barbershop
 router.get('/barbershops/:id/pending-personnel', authMiddleware, async (req, res) => {
   try {
     const pendingPersonnel = await User.find({
@@ -256,6 +281,7 @@ router.get('/barbershops/:id/pending-personnel', authMiddleware, async (req, res
   }
 });
 
+// Update user status
 router.put('/:id/statusapprove', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
