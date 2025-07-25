@@ -79,7 +79,7 @@ router.post("/", authMiddleware, async (req, res) => {
         { date: { $lte: startDate }, endTime: { $gt: startDate } },
         { date: { $lt: endDate }, endTime: { $gte: endDate } },
       ],
-      status: "confirmed", // Only check confirmed reservations
+      status: "confirmed",
     });
 
     const conflictingBlockedSlot = await BlockedSlot.findOne({
@@ -101,7 +101,7 @@ router.post("/", authMiddleware, async (req, res) => {
       barbershop: finalBarbershopId,
       date: startDate,
       endTime: endDate,
-      status: "pending", // Explicitly set to pending
+      status: "pending",
     });
 
     const populatedReservation = await Reservation.findById(newReservation._id)
@@ -123,6 +123,7 @@ router.post("/", authMiddleware, async (req, res) => {
             data: { reservationId: newReservation._id },
           },
         ]);
+        console.log("Notification sent to personnel:", personnelUser.pushToken);
       } catch (pushError) {
         console.error("Push notification failed:", pushError);
       }
@@ -136,7 +137,6 @@ router.post("/", authMiddleware, async (req, res) => {
 });
 
 // Update reservation status and notify client
-// Update reservation status and notify client
 router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (req, res) => {
   try {
     const { status } = req.body;
@@ -149,8 +149,8 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
 
     const reservation = await Reservation.findById(reservationId)
       .populate("service", "name")
-      .populate("client", "firstName pushToken")
-      .populate("personnel", "firstName");
+      .populate("client", "firstName lastName pushToken phone")
+      .populate("personnel", "firstName lastName pushToken");
 
     if (!reservation) {
       return res.status(404).json({ message: "Reservation not found." });
@@ -163,9 +163,15 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
     reservation.status = status;
     await reservation.save();
 
-    // --- NOTIFICATION LOGIC ---
+    // Notification logic
     const client = reservation.client;
-    if (client && client.pushToken && Expo.isExpoPushToken(client.pushToken)) {
+    if (!client) {
+      console.warn(`No client found for reservation ${reservationId}`);
+    } else if (!client.pushToken) {
+      console.warn(`No pushToken for client ${client._id} (${client.firstName} ${client.lastName})`);
+    } else if (!Expo.isExpoPushToken(client.pushToken)) {
+      console.warn(`Invalid pushToken for client ${client._id}: ${client.pushToken}`);
+    } else {
       const serviceNames = reservation.service.map(s => s.name).join(", ");
       const reservationTime = new Date(reservation.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -179,11 +185,12 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
             body: `Your booking for ${serviceNames} at ${reservationTime} has been confirmed by ${reservation.personnel.firstName}.`,
             data: { reservationId: reservation._id },
           }]);
+          console.log(`Notification sent to client ${client._id}: ${client.pushToken}`);
         } catch (pushError) {
-          console.error("Push notification to client failed:", pushError);
+          console.error(`Failed to send confirmed notification to client ${client._id}:`, pushError);
         }
       } 
-      // --- NEW: Notification for cancelled bookings ---
+      // Notification for cancelled bookings
       else if (status === "cancelled") {
         try {
           await expo.sendPushNotificationsAsync([{
@@ -193,10 +200,16 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
             body: `Unfortunately, your booking for ${serviceNames} at ${reservationTime} has been cancelled.`,
             data: { reservationId: reservation._id },
           }]);
+          console.log(`Notification sent to client ${client._id}: ${client.pushToken}`);
         } catch (pushError) {
-          console.error("Push notification to client failed:", pushError);
+          console.error(`Failed to send cancelled notification to client ${client._id}:`, pushError);
         }
       }
+    }
+
+    // Avoid sending notifications to personnel for status updates
+    if (reservation.personnel.pushToken && status === "confirmed") {
+      console.log(`Skipping notification to personnel ${reservation.personnel._id} for status update`);
     }
 
     res.status(200).json(reservation);
@@ -218,7 +231,6 @@ router.get("/upcoming", authMiddleware, async (req, res) => {
       .populate("service", "name")
       .populate("personnel", "firstName lastName phone")
       .sort({ date: 1 });
-    // console.log("📅 Upcoming reservations fetched:", upcomingReservations);
     res.status(200).json(upcomingReservations);
   } catch (error) {
     console.error("❌ Error fetching upcoming reservations:", error);
@@ -238,7 +250,6 @@ router.get("/past", authMiddleware, async (req, res) => {
       .populate("service", "name")
       .populate("personnel", "firstName lastName")
       .sort({ date: -1 });
-    // console.log("📅 Past reservations fetched:", pastReservations);
     res.status(200).json(pastReservations);
   } catch (error) {
     console.error("❌ Error fetching past reservations:", error);
@@ -257,8 +268,6 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
     const personnelId = req.params.id;
     const barbershopId = req.query.barbershopId;
 
-    // console.log('Authenticated User:', req.user.id, 'Roles:', userRoles, 'Requested Personnel:', personnelId, 'Barbershop ID:', barbershopId);
-
     const personnel = await User.findById(personnelId);
     if (!personnel) {
       return res.status(404).json({ message: "Personnel not found." });
@@ -275,7 +284,7 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
       return res.status(403).json({ message: "Unauthorized access. Personnel must belong to your selected barbershop." });
     }
 
-    const { date } = req.query;
+    const { date, status } = req.query;
     let query = { personnel: personnelId };
 
     if (date) {
@@ -289,12 +298,9 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
       query.date = { $gte: startDate, $lte: endDate };
     }
 
-    // Include pending reservations only if the requesting user is the client
-    if (req.user.id !== personnelId) {
-    query.status = { $in: ['pending', 'confirmed'] };
+    if (status) {
+      query.status = status;
     }
-
-    // console.log("Querying reservations with:", query);
 
     const reservations = await Reservation.find(query)
       .populate({
@@ -311,8 +317,6 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
       .sort({ date: 1 });
 
     const validReservations = reservations.filter(r => r.client && r.service);
-    // console.log("Fetched reservations:", validReservations);
-
     res.json(validReservations);
   } catch (err) {
     console.error("❌ Error fetching personnel reservations:", err);
@@ -458,10 +462,11 @@ router.get("/client/:clientId", authMiddleware, authorizeRoles("personnel", "adm
     res.status(500).json({ message: "Server error while fetching client history.", error: error.message });
   }
 });
+
 router.get("/day/:date", authMiddleware, async (req, res) => {
   try {
     const { date } = req.params;
-    const { barbershopId, personnelId } = req.query; // Expect barbershopId and optionally personnelId as query params
+    const { barbershopId, personnelId } = req.query;
 
     if (!date) {
       return res.status(400).json({ message: "Date parameter is required." });
@@ -471,29 +476,25 @@ router.get("/day/:date", authMiddleware, async (req, res) => {
     if (isNaN(startOfDay.getTime())) {
       return res.status(400).json({ message: "Invalid date provided." });
     }
-    startOfDay.setUTCHours(0, 0, 0, 0); // Set to start of the day in UTC
+    startOfDay.setUTCHours(0, 0, 0, 0);
     const endOfDay = new Date(startOfDay);
-    endOfDay.setUTCDate(startOfDay.getUTCDate() + 1); // Go to next day, 00:00:00 UTC
+    endOfDay.setUTCDate(startOfDay.getUTCDate() + 1);
 
     let query = {
-      date: { $gte: startOfDay, $lt: endOfDay }, // Reservations that start on this day
+      date: { $gte: startOfDay, $lt: endOfDay },
     };
 
     if (barbershopId) {
-        query.barbershop = barbershopId;
+      query.barbershop = barbershopId;
     } else {
-        console.warn("barbershopId missing in query for /day/:date route. This might return too many results.");
-        // You might want to enforce barbershopId for this route for security/data scope
-        // return res.status(400).json({ message: "Barbershop ID is required for this query." });
+      console.warn("barbershopId missing in query for /day/:date route. This might return too many results.");
     }
 
     if (personnelId) {
-        query.personnel = personnelId;
+      query.personnel = personnelId;
     } else if (req.user.role === 'personnel' && !req.user.isAdminBlock) {
-        query.personnel = req.user.id;
+      query.personnel = req.user.id;
     }
-
-    // console.log("Fetching reservations for day with query:", query);
 
     const reservations = await Reservation.find(query)
       .populate("client", "firstName lastName profileImageUrl phone")
@@ -509,4 +510,5 @@ router.get("/day/:date", authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Server error. Could not fetch reservations for the specified day.", error: error.message });
   }
 });
+
 module.exports = router;
