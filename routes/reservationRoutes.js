@@ -174,7 +174,6 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
     reservation.status = status;
     await reservation.save();
 
-    // Notification logic
     const client = reservation.client;
     if (!client) {
       console.warn(`No client found for reservation ${reservationId}`);
@@ -186,7 +185,6 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
       const serviceNames = reservation.service.map(s => s.name).join(", ");
       const reservationTime = new Date(reservation.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-      // Notification for confirmed bookings
       if (status === "confirmed") {
         try {
           await expo.sendPushNotificationsAsync([{
@@ -200,9 +198,7 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
         } catch (pushError) {
           console.error(`Failed to send confirmed notification to client ${client._id}:`, pushError);
         }
-      } 
-      // Notification for cancelled bookings
-      else if (status === "cancelled") {
+      } else if (status === "cancelled") {
         try {
           await expo.sendPushNotificationsAsync([{
             to: client.pushToken,
@@ -218,7 +214,6 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
       }
     }
 
-    // Log personnel pushToken status (for debugging)
     if (reservation.personnel.pushToken) {
       console.log(`Personnel ${reservation.personnel._id} has pushToken ${reservation.personnel.pushToken}, but no notification sent for status update`);
     } else {
