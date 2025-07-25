@@ -136,6 +136,7 @@ router.post("/", authMiddleware, async (req, res) => {
 });
 
 // Update reservation status and notify client
+// Update reservation status and notify client
 router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (req, res) => {
   try {
     const { status } = req.body;
@@ -147,9 +148,9 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
     }
 
     const reservation = await Reservation.findById(reservationId)
-      .populate("service", "name duration price")
-      .populate("client", "firstName lastName pushToken")
-      .populate("personnel", "firstName lastName");
+      .populate("service", "name")
+      .populate("client", "firstName pushToken")
+      .populate("personnel", "firstName");
 
     if (!reservation) {
       return res.status(404).json({ message: "Reservation not found." });
@@ -162,32 +163,46 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
     reservation.status = status;
     await reservation.save();
 
-    // Notify client if reservation is confirmed
-    if (status === "confirmed" && reservation.client?.pushToken && Expo.isExpoPushToken(reservation.client.pushToken)) {
-      try {
-        await expo.sendPushNotificationsAsync([
-          {
-            to: reservation.client.pushToken,
+    // --- NOTIFICATION LOGIC ---
+    const client = reservation.client;
+    if (client && client.pushToken && Expo.isExpoPushToken(client.pushToken)) {
+      const serviceNames = reservation.service.map(s => s.name).join(", ");
+      const reservationTime = new Date(reservation.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+      // Notification for confirmed bookings
+      if (status === "confirmed") {
+        try {
+          await expo.sendPushNotificationsAsync([{
+            to: client.pushToken,
             sound: "default",
-            title: "📅 Booking Confirmed",
-            body: `Your booking for ${reservation.service
-              .map((s) => s.name)
-              .join(", ")} on ${new Date(reservation.date).toLocaleDateString()} at ${new Date(reservation.date).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })} has been confirmed by ${reservation.personnel.firstName}.`,
+            title: "✅ Booking Confirmed!",
+            body: `Your booking for ${serviceNames} at ${reservationTime} has been confirmed by ${reservation.personnel.firstName}.`,
             data: { reservationId: reservation._id },
-          },
-        ]);
-      } catch (pushError) {
-        console.error("Push notification to client failed:", pushError);
+          }]);
+        } catch (pushError) {
+          console.error("Push notification to client failed:", pushError);
+        }
+      } 
+      // --- NEW: Notification for cancelled bookings ---
+      else if (status === "cancelled") {
+        try {
+          await expo.sendPushNotificationsAsync([{
+            to: client.pushToken,
+            sound: "default",
+            title: "❌ Booking Cancelled",
+            body: `Unfortunately, your booking for ${serviceNames} at ${reservationTime} has been cancelled.`,
+            data: { reservationId: reservation._id },
+          }]);
+        } catch (pushError) {
+          console.error("Push notification to client failed:", pushError);
+        }
       }
     }
 
     res.status(200).json(reservation);
   } catch (error) {
     console.error("❌ Error updating reservation status:", error);
-    res.status(500).json({ message: "Server error. Could not update reservation status.", error: error.message });
+    res.status(500).json({ message: "Server error. Could not update reservation status." });
   }
 });
 
