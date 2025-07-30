@@ -25,7 +25,7 @@ const storage = new CloudinaryStorage({
 const upload = multer({ storage: storage });
 
 
-// 2. DEFINE AUTHENTICATION MIDDLEWARE
+// 2. DEFINE AUTHENTICATION MIDDLEWARE2
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
