@@ -124,18 +124,21 @@ router.get('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-router.put('/:id', authMiddleware, async (req, res) => {
+router.put('/:id', authMiddleware, upload.single('image'), async (req, res) => {
   try {
+    console.log('PUT /api/services/:id called');
+    console.log('Request body:', req.body);
+    console.log('Request file:', req.file);
     const { name, category, description, price, duration, loyaltyPoints, personnel, imageUrl, barbershop } = req.body;
 
     if (!barbershop) {
+      console.log('Missing barbershop ID');
       return res.status(400).json({ error: 'Barbershop ID is required' });
     }
-    if (loyaltyPoints === undefined) {
+    if (loyaltyPoints === undefined || loyaltyPoints === '') {
       return res.status(400).json({ error: 'Loyalty points are required' });
     }
 
-    // Parse personnel as JSON array
     let personnelArray = [];
     if (personnel && personnel.trim()) {
       try {
@@ -148,13 +151,12 @@ router.put('/:id', authMiddleware, async (req, res) => {
       }
     }
 
-    // Validate personnel IDs
     if (personnelArray.length > 0) {
-      const validPersonnel = await User.find({ 
+      const validPersonnel = await User.find({
         _id: { $in: personnelArray },
-        barbershop: barbershop,
+        barbershop,
         role: 'personnel',
-        status: 'approved'
+        status: 'approved',
       }).select('_id');
       const validIds = validPersonnel.map(p => p._id.toString());
       const invalidIds = personnelArray.filter(id => !validIds.includes(id));
@@ -174,20 +176,28 @@ router.put('/:id', authMiddleware, async (req, res) => {
       barbershop,
     };
 
-    if (imageUrl) {
+    if (req.file) {
+      const result = await new Promise((resolve, reject) => {
+        cloudinary.uploader.upload_stream({ resource_type: 'image' }, (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }).end(req.file.buffer);
+      });
+      update.imageUrl = result.secure_url;
+    } else if (imageUrl) {
       update.imageUrl = imageUrl;
     }
 
-    const updated = await Service.findByIdAndUpdate(req.params.id, update, { new: true })
+    const updated = await Service.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true })
       .populate('barbershop', 'name');
     if (!updated) {
-      console.log(`❌ Service not found for update: ${req.params.id}`);
+      console.log(`Service not found: ${req.params.id}`);
       return res.status(404).json({ error: 'Service not found' });
     }
-    console.log('🛒 Service updated:', { _id: updated._id, name: updated.name, barbershop: updated.barbershop?.name });
+    console.log('Service updated:', { _id: updated._id, name: updated.name });
     res.json(updated);
   } catch (err) {
-    console.error('❌ Failed to update service:', err.message);
+    console.error('Failed to update service:', err.message, err.stack);
     res.status(500).json({ error: 'Failed to update service', detail: err.message });
   }
 });
