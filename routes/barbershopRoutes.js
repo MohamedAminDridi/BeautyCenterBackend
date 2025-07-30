@@ -217,7 +217,7 @@ router.put('/services/:id', authMiddleware, async (req, res) => {
         duration,
         loyaltyPoints,
         personnel: personnel ? JSON.parse(personnel) : undefined,
-        imageUrl: image ? `/uploads/${image.filename}` : undefined,
+        imageUrl: image ? `/uploads/${image.filename}` : undefined,barbershop
       },
       { new: true, runValidators: true }
     ).select('_id name description price duration loyaltyPoints imageUrl');
