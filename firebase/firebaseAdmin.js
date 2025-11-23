@@ -1,31 +1,32 @@
-// src/firebase/firebaseAdmin.js
 const admin = require("firebase-admin");
-const fs = require("fs");
-const path = require("path");
 
-// Must exist ONLY in your local machine or server — NEVER in GitHub
-const keyPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+/**
+ * On Render, Heroku, Vercel, Railway...
+ * You MUST provide FIREBASE_SERVICE_ACCOUNT_JSON
+ * as a SINGLE ENVIRONMENT VARIABLE containing the JSON string.
+ */
 
-if (!keyPath) {
-  console.error("❌ FIREBASE_SERVICE_ACCOUNT_PATH not found in .env");
+const jsonEnv = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+
+if (!jsonEnv) {
+  console.error("❌ Missing FIREBASE_SERVICE_ACCOUNT_JSON in environment");
   process.exit(1);
 }
 
-const resolvedPath = path.resolve(keyPath);
+let serviceAccount;
 
-if (!fs.existsSync(resolvedPath)) {
-  console.error("❌ Firebase key file not found:", resolvedPath);
+try {
+  serviceAccount = JSON.parse(jsonEnv.trim());
+} catch (err) {
+  console.error("❌ FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON");
+  console.error(err);
   process.exit(1);
 }
-
-const serviceAccount = JSON.parse(
-  fs.readFileSync(resolvedPath, "utf8")
-);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
-console.log("✅ Firebase Admin initialized.");
+console.log("✅ Firebase Admin initialized with ENV JSON");
 
 module.exports = admin;
