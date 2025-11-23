@@ -8,7 +8,7 @@ async function sendPushNotification(fcmToken, title, body, data = {}) {
     android: { priority: "high" },
     data,
   };
-
+  
   try {
     const response = await admin.messaging().send(message);
     console.log("Push sent:", response);
