@@ -1,0 +1,34 @@
+# Node dependencies
+node_modules
+
+# Expo & cache
+.expo
+
+# Git
+.git
+.gitignore
+
+# OS/Editor files
+*.log
+*.lock
+*.tmp
+*.temp
+*.DS_Store
+.vscode
+.idea
+
+# Uploads or generated assets (if not required for build)
+uploads/
+
+# Android build output (if any)
+android/app/build
+
+# Environment file (contains secrets)
+.env
+
+# Other (docs, tests, or unused dev folders)
+coverage
+__tests__
+
+# Optional: Ignore large asset folders (uncomment if needed)
+# assets/large-dev-assets/

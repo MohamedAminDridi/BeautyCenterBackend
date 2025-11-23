@@ -1,0 +1,35 @@
+{
+  "name": "smart_door_backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "bcryptjs": "^2.4.3",
+    "body-parser": "^1.20.3",
+    "cloudinary": "^1.41.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "expo-server-sdk": "^3.15.0",
+    "express": "^4.21.2",
+    "firebase-admin": "^13.6.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.15.2",
+    "mqtt": "^5.10.3",
+    "multer": "^2.0.1",
+    "multer-storage-cloudinary": "^4.0.0",
+    "qrcode": "^1.5.4",
+    "smart_door_backend": "file:",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  },
+  "description": ""
+}

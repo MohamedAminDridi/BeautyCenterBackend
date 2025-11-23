@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "7264fbe3-3650-42fb-b915-e2fa7ee766a3"
+      }
+    },
+    "android": {
+      "package": "com.amindridi.smart_door_backend"
+    }
+  }
+}
