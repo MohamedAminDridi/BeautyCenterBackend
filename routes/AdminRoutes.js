@@ -213,53 +213,95 @@ router.patch('/reject-barbershop/:barbershopId', authMiddleware, authorizeRoles(
 
 // Send notification to users
 // send notifications
-router.post('/send-notification', authMiddleware, authorizeRoles('admin'), async (req, res) => {
-  try {
-    const { message, target } = req.body;
-    if (!message) return res.status(400).json({ message: 'Message is required' });
+router.post(
+  '/send-notification',
+  authMiddleware,
+  authorizeRoles('admin'),
+  async (req, res) => {
+    try {
+      const { message, target } = req.body;
 
-    let query = {};
-    if (target !== 'all') query.role = target;
+      if (!message) {
+        return res.status(400).json({ message: 'Message is required' });
+      }
 
-    const users = await User.find(query).select('fcmToken');
-    const tokens = users.map(u => u.fcmToken).filter(Boolean);
+      let query = {};
+      if (target !== 'all') query.role = target;
 
-    if (tokens.length === 0) return res.status(400).json({ message: 'No FCM tokens found' });
+      const users = await User.find(query).select('fcmToken');
+      const tokens = users.map(u => u.fcmToken).filter(Boolean);
 
-    // FCM accepts up to 500 tokens per sendMulticast call. Batch if needed.
-    const BATCH_SIZE = 400;
-    let successCount = 0;
-    let failureCount = 0;
+      if (tokens.length === 0) {
+        return res.status(400).json({ message: 'No FCM tokens found' });
+      }
 
-    for (let i = 0; i < tokens.length; i += BATCH_SIZE) {
-      const batch = tokens.slice(i, i + BATCH_SIZE);
-      const payload = {
-        tokens: batch,
-        notification: {
-          title: 'Admin Notification',
-          body: message,
-        },
-        android: { priority: 'high' },
-      };
-      const response = await admin.messaging().sendMulticast(payload);
-      successCount += response.successCount;
-      failureCount += response.failureCount;
+      const BATCH_SIZE = 400;
+      let successCount = 0;
+      let failureCount = 0;
 
-      // Optionally clean invalid tokens:
-      response.responses.forEach((r, idx) => {
-        if (!r.success) {
-          console.warn('Failed token:', batch[idx], r.error);
-          // optionally remove token from DB here if r.error indicates unregistered/invalid
-        }
+      for (let i = 0; i < tokens.length; i += BATCH_SIZE) {
+        const batch = tokens.slice(i, i + BATCH_SIZE);
+
+        const payload = {
+          tokens: batch,
+
+          // 🔔 REQUIRED FOR SYSTEM NOTIFICATION
+          notification: {
+            title: 'Admin Notification',
+            body: message,
+          },
+
+          // 🔑 REQUIRED FOR FOREGROUND & CLICK HANDLING
+          data: {
+            type: 'ADMIN_MESSAGE',
+            message,
+          },
+
+          android: {
+            priority: 'high',
+            notification: {
+              channelId: 'default', // MUST match notifee channel
+            },
+          },
+        };
+
+        const response = await admin.messaging().sendMulticast(payload);
+
+        successCount += response.successCount;
+        failureCount += response.failureCount;
+
+        // 🧹 Clean invalid tokens
+        response.responses.forEach(async (r, idx) => {
+          if (!r.success) {
+            console.warn('Failed token:', batch[idx], r.error?.code);
+
+            if (
+              r.error?.code === 'messaging/registration-token-not-registered'
+            ) {
+              await User.updateOne(
+                { fcmToken: batch[idx] },
+                { $unset: { fcmToken: 1 } }
+              );
+            }
+          }
+        });
+      }
+
+      res.json({
+        message: 'Notification sent',
+        success: successCount,
+        failure: failureCount,
+      });
+    } catch (error) {
+      console.error('FCM Notification error:', error);
+      res.status(500).json({
+        message: 'Failed to send notification',
+        error: error.message,
       });
     }
-
-    res.json({ message: 'Notification sent', success: successCount, failure: failureCount });
-  } catch (error) {
-    console.error('FCM Notification error:', error);
-    res.status(500).json({ message: 'Failed to send notification', error: error.message });
   }
-});
+);
+
 // Add barbershops route
 router.get('/barbershops', authMiddleware, authorizeRoles('admin'), async (req, res) => {
   try {
