@@ -1,22 +1,16 @@
 const admin = require("firebase-admin");
 
-/**
- * On Render, Heroku, Vercel, Railway...
- * You MUST provide FIREBASE_SERVICE_ACCOUNT_JSON
- * as a SINGLE ENVIRONMENT VARIABLE containing the JSON string.
- */
-
 const jsonEnv = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
 if (!jsonEnv) {
-  console.error("❌ Missing FIREBASE_SERVICE_ACCOUNT_JSON in environment");
+  console.error("❌ Missing FIREBASE_SERVICE_ACCOUNT_JSON");
   process.exit(1);
 }
 
 let serviceAccount;
 
 try {
-  serviceAccount = JSON.parse(jsonEnv.trim());
+  serviceAccount = JSON.parse(jsonEnv);
 } catch (err) {
   console.error("❌ FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON");
   console.error(err);
@@ -27,6 +21,6 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
-console.log("✅ Firebase Admin initialized with ENV JSON");
+console.log("✅ Firebase Admin initialized");
 
 module.exports = admin;

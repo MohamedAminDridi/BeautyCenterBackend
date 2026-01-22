@@ -326,81 +326,31 @@ router.get("/", authMiddleware, authorizeRoles("admin"), async (req, res) => {
 // Create a new blocked slot
 router.post("/block", authMiddleware, async (req, res) => {
   try {
-    const { date, time, barbershopId } = req.body;
-    if (!barbershopId) {
-      return res.status(400).json({ message: "Barbershop ID is required." });
-    }
-    const startDate = new Date(date);
-    if (isNaN(startDate.getTime())) {
-      return res.status(400).json({ message: "Invalid date provided." });
-    }
-    const [hours, minutes] = time.split(":").map(Number);
-    if (isNaN(hours) || isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
-      return res.status(400).json({ message: "Invalid time format. Use HH:MM." });
-    }
-    startDate.setHours(hours, minutes, 0, 0);
-    const endDate = new Date(startDate.getTime() + 30 * 60000);
-
-    const blockedSlot = new BlockedSlot({
-      date: startDate,
-      endTime: endDate,
-      personnel: req.user.id,
-      barbershop: barbershopId,
-    });
-
-    await blockedSlot.save();
-    res.status(201).json({ message: "Slot blocked successfully", blockedSlot });
-  } catch (error) {
-    console.error("Error blocking slot:", error);
-    res.status(500).json({ message: "Server error. Could not block slot.", error: error.message });
-  }
-});
-
-// Get blocked slots for a specific day and barbershop
-router.get("/blocked/day", authMiddleware, async (req, res) => {
-  try {
-    const { date, barbershopId } = req.query;
-
-    const startDay = new Date(`${date}T00:00:00`);
-    const endDay = new Date(`${date}T23:59:59`);
-
-    const blockedSlots = await BlockedSlot.find({
-      personnel: req.user.id,
-      barbershop: barbershopId,
-      date: { $gte: startDay, $lte: endDay },
-    });
-
-    res.json(blockedSlots);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch blocked slots" });
-  }
-});
-
-
-// Delete a blocked slot
-router.post("/block", authMiddleware, async (req, res) => {
-  try {
-    const { date, time, barbershopId } = req.body;
+    const { date, time, barbershopId, duration = 30 } = req.body;
 
     if (!date || !time || !barbershopId) {
-      return res.status(400).json({ message: "Missing data" });
+      return res.status(400).json({ message: "date, time and barbershopId are required" });
     }
 
-    // Build exact start & end
+    // Parse with timezone awareness (assuming local time = barbershop time)
     const start = new Date(`${date}T${time}:00`);
-    const end = new Date(start.getTime() + 30 * 60000);
+    if (isNaN(start.getTime())) {
+      return res.status(400).json({ message: "Invalid date or time format" });
+    }
 
-    // Prevent overlap
-    const exists = await BlockedSlot.findOne({
+    const end = new Date(start.getTime() + duration * 60 * 1000);
+
+    // Check for overlapping blocked slots (same personnel)
+    const conflict = await BlockedSlot.findOne({
       personnel: req.user.id,
       barbershop: barbershopId,
-      date: { $lt: end },
-      endTime: { $gt: start },
+      $or: [
+        { date: { $lt: end }, endTime: { $gt: start } },
+      ],
     });
 
-    if (exists) {
-      return res.status(409).json({ message: "Slot already blocked" });
+    if (conflict) {
+      return res.status(409).json({ message: "Overlaps with an existing blocked slot" });
     }
 
     const blockedSlot = await BlockedSlot.create({
@@ -412,12 +362,69 @@ router.post("/block", authMiddleware, async (req, res) => {
 
     res.status(201).json(blockedSlot);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to block slot" });
+    console.error("Block slot error:", err);
+    res.status(500).json({ message: "Failed to create blocked slot", error: err.message });
   }
 });
 
+// Get blocked slots for a specific day and barbershop
+router.get("/blocked/day", authMiddleware, async (req, res) => {
+  try {
+    const { date, barbershopId } = req.query;
+    if (!date || !barbershopId) {
+      return res.status(400).json({ message: "Date and barbershop ID query parameters are required." });
+    }
+    const startDate = new Date(date);
+    if (isNaN(startDate.getTime())) {
+      return res.status(400).json({ message: "Invalid date provided." });
+    }
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(startDate);
+    endDate.setHours(23, 59, 59, 999);
 
+    const blockedSlots = await BlockedSlot.find({
+      barbershop: barbershopId,
+      personnel: req.user.id,
+      date: { $gte: startDate, $lte: endDate },
+    }).select("date endTime personnel");
+
+    res.status(200).json(blockedSlots);
+  } catch (error) {
+    console.error("Error fetching blocked slots:", error);
+    res.status(500).json({ message: "Server error. Could not fetch blocked slots.", error: error.message });
+  }
+});
+
+// Delete a blocked slot
+router.delete("/block", authMiddleware, async (req, res) => {
+  try {
+    const { date, time, barbershopId } = req.body;
+
+    if (!date || !time || !barbershopId) {
+      return res.status(400).json({ message: "date, time and barbershopId are required" });
+    }
+
+    const start = new Date(`${date}T${time}:00`);
+    if (isNaN(start.getTime())) {
+      return res.status(400).json({ message: "Invalid date or time format" });
+    }
+
+    const deleted = await BlockedSlot.findOneAndDelete({
+      personnel: req.user.id,
+      barbershop: barbershopId,
+      date: start,   // we match exactly on start time
+    });
+
+    if (!deleted) {
+      return res.status(404).json({ message: "No blocked slot found at this start time" });
+    }
+
+    res.status(200).json({ message: "Blocked slot removed", deleted });
+  } catch (err) {
+    console.error("Unblock slot error:", err);
+    res.status(500).json({ message: "Failed to remove blocked slot", error: err.message });
+  }
+});
 
 // Get client history (for personnel or admin)
 router.get("/client/:clientId", authMiddleware, authorizeRoles("personnel", "admin"), async (req, res) => {
