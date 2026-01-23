@@ -8,7 +8,7 @@ const { registerOwner } = require('../controllers/ownerController');
 const { registerPersonnel } = require('../controllers/personnelController');  // <--- Add this import
 
 router.post('/login', loginUser);
-router.post('/register', express.json(), registerUser);
+router.post('/register', registerUser);
 router.post('/register-owner', registerOwner);
 router.post('/register-personnel', registerPersonnel);  // This will now work
 router.get('/me', authMiddleware, getCurrentUser); // Add this line
