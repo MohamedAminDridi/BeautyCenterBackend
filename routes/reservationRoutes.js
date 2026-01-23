@@ -6,7 +6,7 @@ const User = require("../models/User");
 const BlockedSlot = require("../models/BlockedSlot");
 const authMiddleware = require("../middleware/authMiddleware");
 const { authorizeRoles } = require("../middleware/role");
-const admin = require('../firebase/firebaseAdmin'); // path to initializer
+const admin = require('../firebase/firebaseAdmin');
 
 // Create a reservation and notify personnel
 router.post("/", authMiddleware, async (req, res) => {
@@ -323,7 +323,7 @@ router.get("/", authMiddleware, authorizeRoles("admin"), async (req, res) => {
   }
 });
 
-// Create a new blocked slot
+// Create a new blocked slot - ✅ FIXED
 router.post("/block", authMiddleware, async (req, res) => {
   try {
     const { date, time, barbershopId, duration = 30 } = req.body;
@@ -332,13 +332,24 @@ router.post("/block", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "date, time and barbershopId are required" });
     }
 
-    // Parse with timezone awareness (assuming local time = barbershop time)
-    const start = new Date(`${date}T${time}:00`);
+    // ✅ Parse time correctly - create Date in local context
+    const [hours, minutes] = time.split(':').map(Number);
+    const start = new Date(date);
+    start.setHours(hours, minutes, 0, 0);
+    
+    // Validate
     if (isNaN(start.getTime())) {
       return res.status(400).json({ message: "Invalid date or time format" });
     }
 
     const end = new Date(start.getTime() + duration * 60 * 1000);
+
+    console.log('🔒 Blocking slot:', {
+      requestedTime: time,
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+      localStart: start.toString()
+    });
 
     // Check for overlapping blocked slots (same personnel)
     const conflict = await BlockedSlot.findOne({
@@ -360,6 +371,7 @@ router.post("/block", authMiddleware, async (req, res) => {
       barbershop: barbershopId,
     });
 
+    console.log('✅ Slot blocked successfully:', blockedSlot);
     res.status(201).json(blockedSlot);
   } catch (err) {
     console.error("Block slot error:", err);
@@ -395,7 +407,7 @@ router.get("/blocked/day", authMiddleware, async (req, res) => {
   }
 });
 
-// Delete a blocked slot
+// Delete a blocked slot - ✅ FIXED
 router.delete("/block", authMiddleware, async (req, res) => {
   try {
     const { date, time, barbershopId } = req.body;
@@ -404,21 +416,37 @@ router.delete("/block", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "date, time and barbershopId are required" });
     }
 
-    const start = new Date(`${date}T${time}:00`);
+    // ✅ Parse time the same way as blocking
+    const [hours, minutes] = time.split(':').map(Number);
+    const start = new Date(date);
+    start.setHours(hours, minutes, 0, 0);
+    
     if (isNaN(start.getTime())) {
       return res.status(400).json({ message: "Invalid date or time format" });
     }
 
+    console.log('🔓 Unblocking slot:', {
+      requestedTime: time,
+      lookingFor: start.toISOString(),
+      localTime: start.toString()
+    });
+
+    // Find and delete - match on the start time within a 1-minute window to handle milliseconds
     const deleted = await BlockedSlot.findOneAndDelete({
       personnel: req.user.id,
       barbershop: barbershopId,
-      date: start,   // we match exactly on start time
+      date: {
+        $gte: new Date(start.getTime() - 30000), // 30 seconds before
+        $lte: new Date(start.getTime() + 30000), // 30 seconds after
+      }
     });
 
     if (!deleted) {
-      return res.status(404).json({ message: "No blocked slot found at this start time" });
+      console.log('❌ No slot found to delete');
+      return res.status(404).json({ message: "No blocked slot found at this time" });
     }
 
+    console.log('✅ Deleted slot:', deleted);
     res.status(200).json({ message: "Blocked slot removed", deleted });
   } catch (err) {
     console.error("Unblock slot error:", err);
