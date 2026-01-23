@@ -323,7 +323,7 @@ router.get("/", authMiddleware, authorizeRoles("admin"), async (req, res) => {
   }
 });
 
-// Create a new blocked slot - ✅ FIXED
+// Create a new blocked slot - ✅ FIXED FOR UTC
 router.post("/block", authMiddleware, async (req, res) => {
   try {
     const { date, time, barbershopId, duration = 30 } = req.body;
@@ -332,12 +332,11 @@ router.post("/block", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "date, time and barbershopId are required" });
     }
 
-    // ✅ Parse time correctly - create Date in local context
+    // ✅ Parse using UTC to avoid timezone issues
     const [hours, minutes] = time.split(':').map(Number);
-    const start = new Date(date);
-    start.setHours(hours, minutes, 0, 0);
+    const start = new Date(date + 'T00:00:00.000Z');
+    start.setUTCHours(hours, minutes, 0, 0);
     
-    // Validate
     if (isNaN(start.getTime())) {
       return res.status(400).json({ message: "Invalid date or time format" });
     }
@@ -346,12 +345,12 @@ router.post("/block", authMiddleware, async (req, res) => {
 
     console.log('🔒 Blocking slot:', {
       requestedTime: time,
-      startDate: start.toISOString(),
-      endDate: end.toISOString(),
-      localStart: start.toString()
+      requestedDate: date,
+      startUTC: start.toISOString(),
+      endUTC: end.toISOString(),
     });
 
-    // Check for overlapping blocked slots (same personnel)
+    // Check for overlapping blocked slots
     const conflict = await BlockedSlot.findOne({
       personnel: req.user.id,
       barbershop: barbershopId,
@@ -361,6 +360,7 @@ router.post("/block", authMiddleware, async (req, res) => {
     });
 
     if (conflict) {
+      console.log('⚠️ Conflict found:', conflict);
       return res.status(409).json({ message: "Overlaps with an existing blocked slot" });
     }
 
@@ -374,7 +374,7 @@ router.post("/block", authMiddleware, async (req, res) => {
     console.log('✅ Slot blocked successfully:', blockedSlot);
     res.status(201).json(blockedSlot);
   } catch (err) {
-    console.error("Block slot error:", err);
+    console.error("❌ Block slot error:", err);
     res.status(500).json({ message: "Failed to create blocked slot", error: err.message });
   }
 });
@@ -386,13 +386,20 @@ router.get("/blocked/day", authMiddleware, async (req, res) => {
     if (!date || !barbershopId) {
       return res.status(400).json({ message: "Date and barbershop ID query parameters are required." });
     }
-    const startDate = new Date(date);
+    
+    // ✅ Use UTC for consistency
+    const startDate = new Date(date + 'T00:00:00.000Z');
     if (isNaN(startDate.getTime())) {
       return res.status(400).json({ message: "Invalid date provided." });
     }
-    startDate.setHours(0, 0, 0, 0);
-    const endDate = new Date(startDate);
-    endDate.setHours(23, 59, 59, 999);
+    
+    const endDate = new Date(date + 'T23:59:59.999Z');
+
+    console.log('📅 Fetching blocked slots:', {
+      date,
+      startUTC: startDate.toISOString(),
+      endUTC: endDate.toISOString()
+    });
 
     const blockedSlots = await BlockedSlot.find({
       barbershop: barbershopId,
@@ -400,14 +407,16 @@ router.get("/blocked/day", authMiddleware, async (req, res) => {
       date: { $gte: startDate, $lte: endDate },
     }).select("date endTime personnel");
 
+    console.log('📦 Found blocked slots:', blockedSlots.length);
+
     res.status(200).json(blockedSlots);
   } catch (error) {
-    console.error("Error fetching blocked slots:", error);
+    console.error("❌ Error fetching blocked slots:", error);
     res.status(500).json({ message: "Server error. Could not fetch blocked slots.", error: error.message });
   }
 });
 
-// Delete a blocked slot - ✅ FIXED
+// Delete a blocked slot - ✅ FIXED FOR UTC
 router.delete("/block", authMiddleware, async (req, res) => {
   try {
     const { date, time, barbershopId } = req.body;
@@ -416,10 +425,10 @@ router.delete("/block", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "date, time and barbershopId are required" });
     }
 
-    // ✅ Parse time the same way as blocking
+    // ✅ Parse using UTC (same as blocking)
     const [hours, minutes] = time.split(':').map(Number);
-    const start = new Date(date);
-    start.setHours(hours, minutes, 0, 0);
+    const start = new Date(date + 'T00:00:00.000Z');
+    start.setUTCHours(hours, minutes, 0, 0);
     
     if (isNaN(start.getTime())) {
       return res.status(400).json({ message: "Invalid date or time format" });
@@ -427,29 +436,44 @@ router.delete("/block", authMiddleware, async (req, res) => {
 
     console.log('🔓 Unblocking slot:', {
       requestedTime: time,
-      lookingFor: start.toISOString(),
-      localTime: start.toString()
+      requestedDate: date,
+      lookingForUTC: start.toISOString(),
     });
 
-    // Find and delete - match on the start time within a 1-minute window to handle milliseconds
+    // Find exact match with 1-minute tolerance
     const deleted = await BlockedSlot.findOneAndDelete({
       personnel: req.user.id,
       barbershop: barbershopId,
       date: {
-        $gte: new Date(start.getTime() - 30000), // 30 seconds before
-        $lte: new Date(start.getTime() + 30000), // 30 seconds after
+        $gte: new Date(start.getTime() - 30000),
+        $lte: new Date(start.getTime() + 30000),
       }
     });
 
     if (!deleted) {
       console.log('❌ No slot found to delete');
+      
+      // Debug: show what slots exist
+      const allSlots = await BlockedSlot.find({
+        personnel: req.user.id,
+        barbershop: barbershopId,
+      }).select('date endTime');
+      console.log('Available slots:', allSlots.map(s => ({
+        date: s.date.toISOString(),
+        utcHours: s.date.getUTCHours(),
+        utcMinutes: s.date.getUTCMinutes()
+      })));
+      
       return res.status(404).json({ message: "No blocked slot found at this time" });
     }
 
-    console.log('✅ Deleted slot:', deleted);
+    console.log('✅ Deleted slot:', {
+      id: deleted._id,
+      date: deleted.date.toISOString()
+    });
     res.status(200).json({ message: "Blocked slot removed", deleted });
   } catch (err) {
-    console.error("Unblock slot error:", err);
+    console.error("❌ Unblock slot error:", err);
     res.status(500).json({ message: "Failed to remove blocked slot", error: err.message });
   }
 });
