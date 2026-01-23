@@ -11,6 +11,10 @@ let serviceAccount;
 
 try {
   serviceAccount = JSON.parse(jsonEnv);
+
+  // 🔥 THIS LINE FIXES EVERYTHING
+  serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+
 } catch (err) {
   console.error("❌ FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON");
   console.error(err);
