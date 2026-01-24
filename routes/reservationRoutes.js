@@ -502,7 +502,84 @@ router.get("/client/:clientId", authMiddleware, authorizeRoles("personnel", "adm
     res.status(500).json({ message: "Server error while fetching client history.", error: error.message });
   }
 });
+//
+// DELETE /api/reservations/:id - Cancel/Delete a reservation (client only)
+router.delete("/:id", authMiddleware, async (req, res) => {
+  try {
+    const reservationId = req.params.id;
+    const userId = req.user.id;
 
+    // Find the reservation
+    const reservation = await Reservation.findById(reservationId)
+      .populate("service", "name")
+      .populate("personnel", "firstName lastName fcmToken");
+    
+    if (!reservation) {
+      return res.status(404).json({ message: "Reservation not found." });
+    }
+
+    // Check if the user owns this reservation
+    if (reservation.client.toString() !== userId) {
+      return res.status(403).json({ message: "Unauthorized to cancel this reservation." });
+    }
+
+    // Check if reservation is in the past
+    if (new Date(reservation.date) < new Date()) {
+      return res.status(400).json({ message: "Cannot cancel past reservations." });
+    }
+
+    // Check if already cancelled
+    if (reservation.status === 'cancelled') {
+      return res.status(400).json({ message: "This reservation is already cancelled." });
+    }
+
+    // Update status to cancelled instead of deleting
+    reservation.status = 'cancelled';
+    await reservation.save();
+
+    // Notify personnel via FCM about the cancellation
+    const personnel = reservation.personnel;
+    if (personnel?.fcmToken) {
+      try {
+        const serviceNames = reservation.service.map(s => s.name).join(", ");
+        const reservationTime = new Date(reservation.date).toLocaleTimeString([], { 
+          hour: "2-digit", 
+          minute: "2-digit" 
+        });
+
+        const message = {
+          token: personnel.fcmToken,
+          notification: {
+            title: "❌ Reservation Cancelled",
+            body: `A client cancelled their booking for ${serviceNames} at ${reservationTime}.`
+          },
+          data: { 
+            reservationId: reservation._id.toString(),
+            type: 'cancellation'
+          },
+          android: { priority: 'high' }
+        };
+
+        const response = await admin.messaging().send(message);
+        console.log(`FCM sent to personnel ${personnel._id} about cancellation:`, response);
+      } catch (pushError) {
+        console.error(`Failed to send cancellation notification to personnel:`, pushError);
+      }
+    }
+
+    res.status(200).json({ 
+      message: "Reservation cancelled successfully.",
+      reservation 
+    });
+  } catch (error) {
+    console.error("❌ Error cancelling reservation:", error);
+    res.status(500).json({ 
+      message: "Failed to cancel reservation.", 
+      error: error.message 
+    });
+  }
+});
+//
 router.get("/day/:date", authMiddleware, async (req, res) => {
   try {
     const { date } = req.params;
