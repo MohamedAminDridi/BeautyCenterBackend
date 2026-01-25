@@ -217,22 +217,36 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
 
     // ✅ Send FCM notification to client
     const client = reservation.client;
-    if (!client) {
-      console.warn(`No client found for reservation ${reservationId}`);
-    } else if (!client.fcmToken) {
-      console.warn(`No fcmToken for client ${client._id}`);
-    } else {
-      // ✅ Define serviceNames here (outside loyalty block)
-      const serviceNames = Array.isArray(reservation.service)
-        ? reservation.service.map(s => s.name).join(", ")
-        : reservation.service.name || "your service";
-      
-      const reservationTime = new Date(reservation.date).toLocaleTimeString([], { 
-        hour: "2-digit", 
-        minute: "2-digit" 
-      });
+    
+    console.log('🔔 FCM Check:', {
+      hasClient: !!client,
+      clientId: client?._id,
+      hasFcmToken: !!client?.fcmToken,
+      fcmToken: client?.fcmToken ? `${client.fcmToken.substring(0, 20)}...` : 'MISSING',
+      status: status
+    });
 
+    if (!client) {
+      console.warn(`⚠️ No client found for reservation ${reservationId}`);
+    } else if (!client.fcmToken) {
+      console.warn(`⚠️ No fcmToken for client ${client._id}`);
+    } else {
       try {
+        // ✅ Build serviceNames safely
+        const services = Array.isArray(reservation.service) 
+          ? reservation.service 
+          : [reservation.service];
+        
+        const serviceNames = services
+          .filter(s => s && s.name)
+          .map(s => s.name)
+          .join(", ") || "your service";
+        
+        const reservationTime = new Date(reservation.date).toLocaleTimeString([], { 
+          hour: "2-digit", 
+          minute: "2-digit" 
+        });
+
         const message = {
           token: client.fcmToken,
           notification: {
@@ -245,10 +259,17 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
           android: { priority: 'high' }
         };
 
+        console.log('📤 Sending FCM message:', {
+          to: client._id,
+          title: message.notification.title,
+          body: message.notification.body.substring(0, 50) + '...'
+        });
+
         const response = await admin.messaging().send(message);
-        console.log(`✅ FCM sent to client ${client._id}:`, response);
+        console.log(`✅ FCM sent successfully to client ${client._id}:`, response);
       } catch (pushError) {
-        console.error(`❌ Failed to send ${status} notification to client ${client._id}:`, pushError);
+        console.error(`❌ Failed to send ${status} notification to client ${client._id}:`, pushError.message);
+        console.error('Full error:', pushError);
       }
     }
 
@@ -259,6 +280,25 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
       message: "Server error. Could not update reservation status.", 
       error: error.message 
     });
+  }
+});
+
+// Get upcoming reservations for the authenticated client
+router.get("/upcoming", authMiddleware, async (req, res) => {
+  try {
+    const now = new Date();
+    const upcomingReservations = await Reservation.find({
+      client: req.user.id,
+      date: { $gte: now },
+    })
+      .populate("client", "firstName lastName profileImageUrl phone")
+      .populate("service", "name imageUrl")
+      .populate("personnel", "firstName lastName phone")
+      .sort({ date: 1 });
+    res.status(200).json(upcomingReservations);
+  } catch (error) {
+    console.error("❌ Error fetching upcoming reservations:", error);
+    res.status(500).json({ message: "Failed to fetch upcoming reservations.", error: error.message });
   }
 });
 
