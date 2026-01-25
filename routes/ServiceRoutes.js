@@ -146,32 +146,23 @@ router.put('/:id', authMiddleware, upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'Barbershop ID is required' });
     }
 
-    // Parse loyaltyPoints only if provided (keep old value if missing)
-    const update = {
-      name,
-      category,
-      description,
-      price: parseFloat(price),
-      duration: parseInt(duration),
-      personnel: [],
-      barbershop,
-    };
-
-    // Handle loyaltyPoints update safely
+    // Parse loyaltyPoints safely (keep old value if not sent)
+    let updateLoyaltyPoints;
     if (loyaltyPoints !== undefined && loyaltyPoints !== '' && loyaltyPoints !== null) {
-      const parsedLoyalty = parseInt(loyaltyPoints, 10);
-      if (!isNaN(parsedLoyalty) && parsedLoyalty >= 0) {
-        update.loyaltyPoints = parsedLoyalty;
+      const parsed = parseInt(loyaltyPoints, 10);
+      if (!isNaN(parsed) && parsed >= 0) {
+        updateLoyaltyPoints = parsed;
       } else {
         return res.status(400).json({ error: 'Loyalty points must be a valid non-negative integer' });
       }
     }
 
     // Parse personnel
+    let personnelArray = [];
     if (personnel && personnel.trim()) {
       try {
-        update.personnel = JSON.parse(personnel);
-        if (!Array.isArray(update.personnel)) {
+        personnelArray = JSON.parse(personnel);
+        if (!Array.isArray(personnelArray)) {
           return res.status(400).json({ error: 'Personnel must be an array of IDs' });
         }
       } catch (err) {
@@ -179,21 +170,37 @@ router.put('/:id', authMiddleware, upload.single('image'), async (req, res) => {
       }
     }
 
-    // Validate personnel IDs (if provided)
-    if (update.personnel.length > 0) {
+    // Validate personnel
+    if (personnelArray.length > 0) {
       const validPersonnel = await User.find({
-        _id: { $in: update.personnel },
+        _id: { $in: personnelArray },
         barbershop,
         role: 'personnel',
         status: 'approved',
       }).select('_id');
 
       const validIds = validPersonnel.map(p => p._id.toString());
-      const invalidIds = update.personnel.filter(id => !validIds.includes(id));
+      const invalidIds = personnelArray.filter(id => !validIds.includes(id));
 
       if (invalidIds.length > 0) {
         return res.status(400).json({ error: `Invalid personnel IDs: ${invalidIds.join(', ')}` });
       }
+    }
+
+    // Build update object – loyaltyPoints is now correctly included when sent
+    const update = {
+      name,
+      category,
+      description,
+      price: parseFloat(price),
+      duration: parseInt(duration),
+      personnel: personnelArray,
+      barbershop,
+    };
+
+    // Add loyaltyPoints only if valid new value was provided
+    if (updateLoyaltyPoints !== undefined) {
+      update.loyaltyPoints = updateLoyaltyPoints;
     }
 
     // Image handling
@@ -205,7 +212,7 @@ router.put('/:id', authMiddleware, upload.single('image'), async (req, res) => {
         ).end(req.file.buffer);
       });
       update.imageUrl = result.secure_url;
-    } else if (imageUrl !== undefined) {
+    } else if (imageUrl !== undefined && imageUrl !== '') {
       update.imageUrl = imageUrl;
     }
 
@@ -218,10 +225,11 @@ router.put('/:id', authMiddleware, upload.single('image'), async (req, res) => {
       return res.status(404).json({ error: 'Service not found' });
     }
 
-    console.log('🛒 Service updated:', {
+    console.log('🛒 Service updated successfully:', {
       _id: updated._id,
       name: updated.name,
-      loyaltyPoints: updated.loyaltyPoints,
+      loyaltyPoints: updated.loyaltyPoints,  // should now show the new value
+      barbershop: updated.barbershop?.name,
     });
 
     res.json(updated);
