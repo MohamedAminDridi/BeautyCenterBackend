@@ -8,8 +8,127 @@ const authMiddleware = require("../middleware/authMiddleware");
 const { authorizeRoles } = require("../middleware/role");
 const admin = require('../firebase/firebaseAdmin');
 const Loyalty = require('../models/Loyalty');
+const mongoose = require('mongoose');
+
+// ============================================
+// HELPER FUNCTIONS FOR BACKGROUND TASKS
+// ============================================
+
+// ✅ Background function for loyalty points
+async function awardLoyaltyPoints(reservation) {
+  try {
+    const validServices = (reservation.service || []).filter(
+      s => s && s._id && s.name && typeof s.loyaltyPoints === 'number'
+    );
+
+    if (validServices.length === 0) {
+      return;
+    }
+
+    const totalLoyaltyPoints = validServices.reduce((total, service) => {
+      return total + (service.loyaltyPoints || 0);
+    }, 0);
+
+    if (totalLoyaltyPoints <= 0) {
+      return;
+    }
+
+    const serviceNames = validServices.map(s => s.name).join(", ");
+    
+    // ✅ Atomic operation with timeout
+    await Loyalty.findOneAndUpdate(
+      { userId: reservation.client._id },
+      {
+        $inc: { points: totalLoyaltyPoints },
+        $push: {
+          history: {
+            description: `Confirmed booking: ${serviceNames}`,
+            points: totalLoyaltyPoints,
+            date: new Date(),
+          }
+        }
+      },
+      { 
+        new: true, 
+        upsert: true,
+        setDefaultsOnInsert: true,
+        maxTimeMS: 5000
+      }
+    );
+
+    console.log('🎉 Loyalty points awarded:', totalLoyaltyPoints);
+  } catch (error) {
+    console.error('❌ Loyalty error:', error.message);
+  }
+}
+
+// ✅ Background function for FCM
+async function sendFCMNotification(reservation, status) {
+  try {
+    const client = reservation.client;
+    
+    if (!client || !client.fcmToken) {
+      return;
+    }
+
+    const validServices = (reservation.service || []).filter(s => s && s.name);
+    const serviceNames = validServices.length > 0 
+      ? validServices.map(s => s.name).join(", ")
+      : "your service";
+    
+    const reservationTime = new Date(reservation.date).toLocaleTimeString([], { 
+      hour: "2-digit", 
+      minute: "2-digit" 
+    });
+
+    const message = {
+      token: client.fcmToken,
+      notification: {
+        title: status === "confirmed" ? "✅ Booking Confirmed!" : "❌ Booking Cancelled",
+        body: status === "confirmed"
+          ? `Your booking for ${serviceNames} at ${reservationTime} has been confirmed by ${reservation.personnel.firstName}.`
+          : `Unfortunately, your booking for ${serviceNames} at ${reservationTime} has been cancelled.`
+      },
+      data: { 
+        reservationId: reservation._id.toString(),
+        status: status,
+        type: 'reservation_update'
+      },
+      android: { 
+        priority: 'high',
+        ttl: 3600
+      }
+    };
+
+    await admin.messaging().send(message);
+    console.log(`✅ FCM sent to client ${client._id}`);
+  } catch (error) {
+    console.error('❌ FCM error:', error.message);
+    
+    if (error.code === 'messaging/invalid-registration-token' || 
+        error.code === 'messaging/registration-token-not-registered') {
+      try {
+        await User.findByIdAndUpdate(
+          reservation.client._id,
+          { $unset: { fcmToken: "" } },
+          { maxTimeMS: 3000 }
+        );
+      } catch (clearError) {
+        console.error('Failed to clear token:', clearError.message);
+      }
+    }
+  }
+}
+
+// ============================================
+// ROUTES
+// ============================================
+
 // Create a reservation and notify personnel
 router.post("/", authMiddleware, async (req, res) => {
+  req.setTimeout(20000);
+  res.setTimeout(20000);
+
   try {
     const { services, date, barbershopId, personnel } = req.body;
     const clientId = req.user.id;
@@ -25,14 +144,17 @@ router.post("/", authMiddleware, async (req, res) => {
 
     let finalBarbershopId = barbershopId;
     if (!finalBarbershopId) {
-      const firstService = await Service.findById(services[0]);
+      const firstService = await Service.findById(services[0]).maxTimeMS(3000);
       if (!firstService || !firstService.barbershop) {
         return res.status(400).json({ message: "Barbershop ID is required or cannot be derived." });
       }
       finalBarbershopId = firstService.barbershop.toString();
     }
 
-    const serviceDocuments = await Service.find({ _id: { $in: services } }).populate("personnel");
+    const serviceDocuments = await Service.find({ _id: { $in: services } })
+      .populate("personnel")
+      .maxTimeMS(5000);
+      
     if (serviceDocuments.length !== services.length) {
       return res.status(404).json({ message: "One or more services not found." });
     }
@@ -44,7 +166,7 @@ router.post("/", authMiddleware, async (req, res) => {
 
     let personnelId = personnel;
     if (personnelId) {
-      const personnelUser = await User.findById(personnelId);
+      const personnelUser = await User.findById(personnelId).maxTimeMS(3000);
       if (!personnelUser) return res.status(400).json({ message: "Invalid personnel ID." });
       personnelId = personnelUser._id;
     } else {
@@ -65,7 +187,7 @@ router.post("/", authMiddleware, async (req, res) => {
     const totalDuration = serviceDocuments.reduce((total, service) => total + (service.duration || 30), 0);
     const endDate = new Date(startDate.getTime() + totalDuration * 60000);
 
-    // check conflicts
+    // Check conflicts
     const conflictingReservation = await Reservation.findOne({
       personnel: personnelId,
       barbershop: finalBarbershopId,
@@ -74,7 +196,7 @@ router.post("/", authMiddleware, async (req, res) => {
         { date: { $lt: endDate }, endTime: { $gte: endDate } },
       ],
       status: "confirmed",
-    });
+    }).maxTimeMS(5000);
 
     const conflictingBlockedSlot = await BlockedSlot.findOne({
       personnel: personnelId,
@@ -82,7 +204,7 @@ router.post("/", authMiddleware, async (req, res) => {
         { date: { $lte: startDate }, endTime: { $gt: startDate } },
         { date: { $lt: endDate }, endTime: { $gte: endDate } },
       ],
-    });
+    }).maxTimeMS(5000);
 
     if (conflictingReservation || conflictingBlockedSlot) {
       return res.status(409).json({ message: "This slot is already booked or blocked." });
@@ -101,175 +223,141 @@ router.post("/", authMiddleware, async (req, res) => {
     const populatedReservation = await Reservation.findById(newReservation._id)
       .populate("service", "name duration price")
       .populate("personnel", "firstName lastName fcmToken")
-      .populate("client", "firstName lastName profileImageUrl phone fcmToken");
+      .populate("client", "firstName lastName profileImageUrl phone fcmToken")
+      .maxTimeMS(5000);
 
-    // notify personnel via FCM
-    const personnelUser = await User.findById(personnelId);
-    if (personnelUser?.fcmToken) {
+    // Send response immediately
+    res.status(201).json(populatedReservation);
+
+    // Notify personnel in background
+    setImmediate(async () => {
       try {
-        const message = {
-          token: personnelUser.fcmToken,
-          notification: {
-            title: "📅 New Reservation Pending",
-            body: `New booking for ${serviceDocuments.map(s => s.name).join(", ")} at ${startDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-          },
-          data: { reservationId: newReservation._id.toString() },
-          android: { priority: "high" },
-        };
-        const response = await admin.messaging().send(message);
-        console.log(`FCM sent to personnel ${personnelId}:`, response);
+        const personnelUser = await User.findById(personnelId).maxTimeMS(3000);
+        if (personnelUser?.fcmToken) {
+          const message = {
+            token: personnelUser.fcmToken,
+            notification: {
+              title: "📅 New Reservation Pending",
+              body: `New booking for ${serviceDocuments.map(s => s.name).join(", ")} at ${startDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+            },
+            data: { reservationId: newReservation._id.toString() },
+            android: { priority: "high" },
+          };
+          await admin.messaging().send(message);
+          console.log(`FCM sent to personnel ${personnelId}`);
+        }
       } catch (pushError) {
-        console.error(`Failed to send FCM to personnel ${personnelId}:`, pushError);
+        console.error(`Failed to send FCM to personnel:`, pushError.message);
       }
-    } else {
-      console.warn(`No valid fcmToken for personnel ${personnelId}`);
-    }
+    });
 
-    return res.status(201).json(populatedReservation);
   } catch (error) {
     console.error("❌ Server error during reservation:", error);
     return res.status(500).json({ message: "Server error. Could not create reservation.", error: error.message });
   }
 });
 
-// Update reservation status and notify client (FCM)
-// Update reservation status and notify client (FCM)
+// ✅ OPTIMIZED: Update reservation status
 router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (req, res) => {
+  req.setTimeout(15000);
+  res.setTimeout(15000);
+
   try {
     const { status, clientId } = req.body;
     const reservationId = req.params.id;
     const personnelId = req.user.id;
 
-    if (!["confirmed", "cancelled"].includes(status)) {
-      return res.status(400).json({ message: "Invalid status. Must be 'confirmed' or 'cancelled'." });
+    if (!status || !["confirmed", "cancelled"].includes(status)) {
+      return res.status(400).json({ 
+        message: "Invalid status. Must be 'confirmed' or 'cancelled'." 
+      });
     }
 
+    if (!mongoose.Types.ObjectId.isValid(reservationId)) {
+      return res.status(400).json({ message: "Invalid reservation ID format." });
+    }
+
+    // ✅ Use lean() for faster query + add timeout
     const reservation = await Reservation.findById(reservationId)
       .populate("service", "name loyaltyPoints")
       .populate("client", "firstName lastName fcmToken phone")
-      .populate("personnel", "firstName lastName fcmToken");
+      .populate("personnel", "firstName lastName fcmToken")
+      .lean()
+      .maxTimeMS(5000);
 
     if (!reservation) {
       return res.status(404).json({ message: "Reservation not found." });
     }
 
     if (reservation.personnel._id.toString() !== personnelId) {
-      return res.status(403).json({ message: "Unauthorized to update this reservation." });
+      return res.status(403).json({ 
+        message: "Unauthorized to update this reservation." 
+      });
     }
 
     if (clientId && reservation.client._id.toString() !== clientId) {
-      return res.status(400).json({ message: "Client ID does not match reservation." });
+      return res.status(400).json({ 
+        message: "Client ID does not match reservation." 
+      });
     }
 
-    // Track if this is a NEW confirmation (check BEFORE updating)
     const wasNotConfirmed = reservation.status !== 'confirmed';
     const isNowConfirmed = status === 'confirmed';
+    const shouldAwardPoints = wasNotConfirmed && isNowConfirmed && !reservation.blocked;
 
-    // Update status and save
-    reservation.status = status;
-    await reservation.save();
+    // ✅ Atomic update operation
+    const updatedReservation = await Reservation.findByIdAndUpdate(
+      reservationId,
+      { status: status },
+      { new: true, runValidators: true }
+    ).populate("service", "name loyaltyPoints")
+     .populate("client", "firstName lastName fcmToken phone")
+     .populate("personnel", "firstName lastName fcmToken")
+     .maxTimeMS(5000);
 
-    // AWARD LOYALTY POINTS (only on first confirmation)
-    if (wasNotConfirmed && isNowConfirmed && !reservation.blocked) {
-      try {
-        // Filter out any null/undefined services from the array
-        const validServices = (reservation.service || []).filter(s => s && s._id && s.name);
-
-        if (validServices.length === 0) {
-          console.warn('⚠️ No valid services found for loyalty points in reservation:', reservationId);
-        } else {
-          const totalLoyaltyPoints = validServices.reduce((total, service) => {
-            return total + (service.loyaltyPoints || 0);
-          }, 0);
-
-          if (totalLoyaltyPoints > 0) {
-            const serviceNames = validServices.map(s => s.name).join(", ");
-            
-            let loyalty = await Loyalty.findOne({ userId: reservation.client._id });
-            
-            if (!loyalty) {
-              loyalty = new Loyalty({ 
-                userId: reservation.client._id, 
-                points: 0, 
-                history: [] 
-              });
-            }
-
-            loyalty.points += totalLoyaltyPoints;
-            loyalty.history.push({
-              description: `Confirmed booking: ${serviceNames}`,
-              points: totalLoyaltyPoints,
-              date: new Date(),
-            });
-
-            await loyalty.save();
-
-            console.log('🎉 LOYALTY POINTS AWARDED:', {
-              clientId: reservation.client._id,
-              pointsAwarded: totalLoyaltyPoints,
-              newTotal: loyalty.points,
-              services: serviceNames
-            });
-          } else {
-            console.log('ℹ️ No loyalty points to award (all services have 0 points)');
-          }
-        }
-      } catch (loyaltyError) {
-        console.error('❌ Failed to award loyalty points:', loyaltyError);
-        // Don't fail the reservation update if loyalty fails
-      }
+    if (!updatedReservation) {
+      return res.status(404).json({ message: "Failed to update reservation." });
     }
 
-    // Send FCM notification to client
-    const client = reservation.client;
-    
-    if (!client) {
-      console.warn(`⚠️ No client found for reservation ${reservationId}`);
-    } else if (!client.fcmToken) {
-      console.warn(`⚠️ No fcmToken for client ${client._id}`);
-    } else {
-      try {
-        // Build serviceNames safely from array
-        const validServices = (reservation.service || []).filter(s => s && s.name);
-        const serviceNames = validServices.length > 0 
-          ? validServices.map(s => s.name).join(", ")
-          : "your service";
-        
-        const reservationTime = new Date(reservation.date).toLocaleTimeString([], { 
-          hour: "2-digit", 
-          minute: "2-digit" 
-        });
+    // ✅ CRITICAL: Send response IMMEDIATELY
+    res.status(200).json(updatedReservation);
 
-        const message = {
-          token: client.fcmToken,
-          notification: {
-            title: status === "confirmed" ? "✅ Booking Confirmed!" : "❌ Booking Cancelled",
-            body: status === "confirmed"
-              ? `Your booking for ${serviceNames} at ${reservationTime} has been confirmed by ${reservation.personnel.firstName}.`
-              : `Unfortunately, your booking for ${serviceNames} at ${reservationTime} has been cancelled.`
-          },
-          data: { 
-            reservationId: reservation._id.toString(),
-            status: status
-          },
-          android: { priority: 'high' }
-        };
-
-        const response = await admin.messaging().send(message);
-        console.log(`✅ FCM sent successfully to client ${client._id}`);
-      } catch (pushError) {
-        console.error(`❌ Failed to send ${status} notification to client ${client._id}:`, pushError.message);
-        // Log the full error for debugging but don't expose it to client
-        if (pushError.code === 'messaging/invalid-registration-token' || 
-            pushError.code === 'messaging/registration-token-not-registered') {
-          console.warn(`🔧 FCM Token may be invalid or expired for client ${client._id}`);
+    // ✅ Background tasks using setImmediate
+    if (shouldAwardPoints) {
+      setImmediate(async () => {
+        try {
+          await awardLoyaltyPoints(reservation);
+        } catch (err) {
+          console.error('❌ Background loyalty error:', err.message);
         }
-      }
+      });
     }
 
-    return res.status(200).json(reservation);
+    setImmediate(async () => {
+      try {
+        await sendFCMNotification(updatedReservation, status);
+      } catch (err) {
+        console.error('❌ Background FCM error:', err.message);
+      }
+    });
+
   } catch (error) {
     console.error("❌ Error updating reservation status:", error);
+    
+    if (error.name === 'CastError') {
+      return res.status(400).json({ 
+        message: "Invalid ID format.", 
+        error: error.message 
+      });
+    }
+    
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ 
+        message: "Validation error.", 
+        error: error.message 
+      });
+    }
+
     return res.status(500).json({ 
       message: "Server error. Could not update reservation status.", 
       error: error.message 
@@ -279,6 +367,9 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
 
 // Get upcoming reservations for the authenticated client
 router.get("/upcoming", authMiddleware, async (req, res) => {
+  req.setTimeout(15000);
+  res.setTimeout(15000);
+
   try {
     const now = new Date();
     const upcomingReservations = await Reservation.find({
@@ -288,7 +379,9 @@ router.get("/upcoming", authMiddleware, async (req, res) => {
       .populate("client", "firstName lastName profileImageUrl phone")
       .populate("service", "name imageUrl")
       .populate("personnel", "firstName lastName phone")
-      .sort({ date: 1 });
+      .sort({ date: 1 })
+      .maxTimeMS(8000);
+
     res.status(200).json(upcomingReservations);
   } catch (error) {
     console.error("❌ Error fetching upcoming reservations:", error);
@@ -298,6 +391,9 @@ router.get("/upcoming", authMiddleware, async (req, res) => {
 
 // Get past reservations for the authenticated client
 router.get("/past", authMiddleware, async (req, res) => {
+  req.setTimeout(15000);
+  res.setTimeout(15000);
+
   try {
     const now = new Date();
     const pastReservations = await Reservation.find({
@@ -307,7 +403,9 @@ router.get("/past", authMiddleware, async (req, res) => {
       .populate("client", "firstName lastName profileImageUrl phone")
       .populate("service", "name imageUrl")
       .populate("personnel", "firstName lastName")
-      .sort({ date: -1 });
+      .sort({ date: -1 })
+      .maxTimeMS(8000);
+
     res.status(200).json(pastReservations);
   } catch (error) {
     console.error("❌ Error fetching past reservations:", error);
@@ -317,6 +415,9 @@ router.get("/past", authMiddleware, async (req, res) => {
 
 // Get reservations for a specific personnel
 router.get("/personnel/:id", authMiddleware, async (req, res) => {
+  req.setTimeout(15000);
+  res.setTimeout(15000);
+
   try {
     if (!req.user) {
       return res.status(401).json({ message: "User not authenticated." });
@@ -326,7 +427,7 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
     const personnelId = req.params.id;
     const barbershopId = req.query.barbershopId;
 
-    const personnel = await User.findById(personnelId);
+    const personnel = await User.findById(personnelId).maxTimeMS(3000);
     if (!personnel) {
       return res.status(404).json({ message: "Personnel not found." });
     }
@@ -372,7 +473,8 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
         match: { _id: { $exists: true } },
       })
       .select("date endTime client service personnel status")
-      .sort({ date: 1 });
+      .sort({ date: 1 })
+      .maxTimeMS(8000);
 
     const validReservations = reservations.filter(r => r.client && r.service);
     res.json(validReservations);
@@ -388,12 +490,17 @@ router.get("/personnel/:id", authMiddleware, async (req, res) => {
 
 // Get all reservations (admin only)
 router.get("/", authMiddleware, authorizeRoles("admin"), async (req, res) => {
+  req.setTimeout(15000);
+  res.setTimeout(15000);
+
   try {
     const reservations = await Reservation.find()
       .populate("client", "firstName lastName profileImageUrl phone pushToken")
       .populate("service", "name")
       .populate("personnel", "firstName lastName")
-      .sort({ date: 1 });
+      .sort({ date: 1 })
+      .maxTimeMS(8000);
+
     res.status(200).json(reservations);
   } catch (err) {
     console.error("❌ Error fetching reservations:", err);
@@ -401,8 +508,11 @@ router.get("/", authMiddleware, authorizeRoles("admin"), async (req, res) => {
   }
 });
 
-// Create a new blocked slot - ✅ FIXED FOR UTC
+// Create a new blocked slot
 router.post("/block", authMiddleware, async (req, res) => {
+  req.setTimeout(10000);
+  res.setTimeout(10000);
+
   try {
     const { date, time, barbershopId, duration = 30 } = req.body;
 
@@ -410,7 +520,6 @@ router.post("/block", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "date, time and barbershopId are required" });
     }
 
-    // ✅ Parse using UTC to avoid timezone issues
     const [hours, minutes] = time.split(':').map(Number);
     const start = new Date(date + 'T00:00:00.000Z');
     start.setUTCHours(hours, minutes, 0, 0);
@@ -421,24 +530,15 @@ router.post("/block", authMiddleware, async (req, res) => {
 
     const end = new Date(start.getTime() + duration * 60 * 1000);
 
-    console.log('🔒 Blocking slot:', {
-      requestedTime: time,
-      requestedDate: date,
-      startUTC: start.toISOString(),
-      endUTC: end.toISOString(),
-    });
-
-    // Check for overlapping blocked slots
     const conflict = await BlockedSlot.findOne({
       personnel: req.user.id,
       barbershop: barbershopId,
       $or: [
         { date: { $lt: end }, endTime: { $gt: start } },
       ],
-    });
+    }).maxTimeMS(3000);
 
     if (conflict) {
-      console.log('⚠️ Conflict found:', conflict);
       return res.status(409).json({ message: "Overlaps with an existing blocked slot" });
     }
 
@@ -449,7 +549,6 @@ router.post("/block", authMiddleware, async (req, res) => {
       barbershop: barbershopId,
     });
 
-    console.log('✅ Slot blocked successfully:', blockedSlot);
     res.status(201).json(blockedSlot);
   } catch (err) {
     console.error("❌ Block slot error:", err);
@@ -459,13 +558,15 @@ router.post("/block", authMiddleware, async (req, res) => {
 
 // Get blocked slots for a specific day and barbershop
 router.get("/blocked/day", authMiddleware, async (req, res) => {
+  req.setTimeout(10000);
+  res.setTimeout(10000);
+
   try {
     const { date, barbershopId } = req.query;
     if (!date || !barbershopId) {
       return res.status(400).json({ message: "Date and barbershop ID query parameters are required." });
     }
     
-    // ✅ Use UTC for consistency
     const startDate = new Date(date + 'T00:00:00.000Z');
     if (isNaN(startDate.getTime())) {
       return res.status(400).json({ message: "Invalid date provided." });
@@ -473,19 +574,11 @@ router.get("/blocked/day", authMiddleware, async (req, res) => {
     
     const endDate = new Date(date + 'T23:59:59.999Z');
 
-    console.log('📅 Fetching blocked slots:', {
-      date,
-      startUTC: startDate.toISOString(),
-      endUTC: endDate.toISOString()
-    });
-
     const blockedSlots = await BlockedSlot.find({
       barbershop: barbershopId,
       personnel: req.user.id,
       date: { $gte: startDate, $lte: endDate },
-    }).select("date endTime personnel");
-
-    console.log('📦 Found blocked slots:', blockedSlots.length);
+    }).select("date endTime personnel").maxTimeMS(5000);
 
     res.status(200).json(blockedSlots);
   } catch (error) {
@@ -494,8 +587,11 @@ router.get("/blocked/day", authMiddleware, async (req, res) => {
   }
 });
 
-// Delete a blocked slot - ✅ FIXED FOR UTC
+// Delete a blocked slot
 router.delete("/block", authMiddleware, async (req, res) => {
+  req.setTimeout(10000);
+  res.setTimeout(10000);
+
   try {
     const { date, time, barbershopId } = req.body;
 
@@ -503,7 +599,6 @@ router.delete("/block", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "date, time and barbershopId are required" });
     }
 
-    // ✅ Parse using UTC (same as blocking)
     const [hours, minutes] = time.split(':').map(Number);
     const start = new Date(date + 'T00:00:00.000Z');
     start.setUTCHours(hours, minutes, 0, 0);
@@ -512,13 +607,6 @@ router.delete("/block", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "Invalid date or time format" });
     }
 
-    console.log('🔓 Unblocking slot:', {
-      requestedTime: time,
-      requestedDate: date,
-      lookingForUTC: start.toISOString(),
-    });
-
-    // Find exact match with 1-minute tolerance
     const deleted = await BlockedSlot.findOneAndDelete({
       personnel: req.user.id,
       barbershop: barbershopId,
@@ -526,29 +614,12 @@ router.delete("/block", authMiddleware, async (req, res) => {
         $gte: new Date(start.getTime() - 30000),
         $lte: new Date(start.getTime() + 30000),
       }
-    });
+    }).maxTimeMS(3000);
 
     if (!deleted) {
-      console.log('❌ No slot found to delete');
-      
-      // Debug: show what slots exist
-      const allSlots = await BlockedSlot.find({
-        personnel: req.user.id,
-        barbershop: barbershopId,
-      }).select('date endTime');
-      console.log('Available slots:', allSlots.map(s => ({
-        date: s.date.toISOString(),
-        utcHours: s.date.getUTCHours(),
-        utcMinutes: s.date.getUTCMinutes()
-      })));
-      
       return res.status(404).json({ message: "No blocked slot found at this time" });
     }
 
-    console.log('✅ Deleted slot:', {
-      id: deleted._id,
-      date: deleted.date.toISOString()
-    });
     res.status(200).json({ message: "Blocked slot removed", deleted });
   } catch (err) {
     console.error("❌ Unblock slot error:", err);
@@ -558,6 +629,9 @@ router.delete("/block", authMiddleware, async (req, res) => {
 
 // Get client history (for personnel or admin)
 router.get("/client/:clientId", authMiddleware, authorizeRoles("personnel", "admin"), async (req, res) => {
+  req.setTimeout(15000);
+  res.setTimeout(15000);
+
   try {
     const clientId = req.params.clientId;
     if (!clientId) {
@@ -568,7 +642,8 @@ router.get("/client/:clientId", authMiddleware, authorizeRoles("personnel", "adm
       .populate("client", "firstName lastName profileImageUrl phone pushToken")
       .populate("service", "name duration price")
       .populate("personnel", "firstName lastName")
-      .sort({ date: 1 });
+      .sort({ date: 1 })
+      .maxTimeMS(8000);
 
     if (!clientReservations || clientReservations.length === 0) {
       return res.status(404).json({ message: "No reservations found for this client." });
@@ -580,85 +655,88 @@ router.get("/client/:clientId", authMiddleware, authorizeRoles("personnel", "adm
     res.status(500).json({ message: "Server error while fetching client history.", error: error.message });
   }
 });
-//
-// DELETE /api/reservations/:id - Cancel/Delete a reservation (client only)
+
+// DELETE - Cancel/Delete a reservation (client only)
 router.delete("/:id", authMiddleware, async (req, res) => {
+  req.setTimeout(15000);
+  res.setTimeout(15000);
+
   try {
     const reservationId = req.params.id;
     const userId = req.user.id;
 
-    // Find the reservation
     const reservation = await Reservation.findById(reservationId)
       .populate("service", "name")
-      .populate("personnel", "firstName lastName fcmToken");
-    
+      .populate("personnel", "firstName lastName fcmToken")
+      .maxTimeMS(5000);
+
     if (!reservation) {
       return res.status(404).json({ message: "Reservation not found." });
     }
 
-    // Check if the user owns this reservation
     if (reservation.client.toString() !== userId) {
       return res.status(403).json({ message: "Unauthorized to cancel this reservation." });
     }
 
-    // Check if reservation is in the past
     if (new Date(reservation.date) < new Date()) {
       return res.status(400).json({ message: "Cannot cancel past reservations." });
     }
 
-    // Check if already cancelled
     if (reservation.status === 'cancelled') {
       return res.status(400).json({ message: "This reservation is already cancelled." });
     }
 
-    // Update status to cancelled instead of deleting
     reservation.status = 'cancelled';
     await reservation.save();
 
-    // Notify personnel via FCM about the cancellation
-    const personnel = reservation.personnel;
-    if (personnel?.fcmToken) {
-      try {
-        const serviceNames = reservation.service.map(s => s.name).join(", ");
-        const reservationTime = new Date(reservation.date).toLocaleTimeString([], { 
-          hour: "2-digit", 
-          minute: "2-digit" 
-        });
-
-        const message = {
-          token: personnel.fcmToken,
-          notification: {
-            title: "❌ Reservation Cancelled",
-            body: `A client cancelled their booking for ${serviceNames} at ${reservationTime}.`
-          },
-          data: { 
-            reservationId: reservation._id.toString(),
-            type: 'cancellation'
-          },
-          android: { priority: 'high' }
-        };
-
-        const response = await admin.messaging().send(message);
-        console.log(`FCM sent to personnel ${personnel._id} about cancellation:`, response);
-      } catch (pushError) {
-        console.error(`Failed to send cancellation notification to personnel:`, pushError);
-      }
-    }
-
+    // Send response immediately
     res.status(200).json({ 
       message: "Reservation cancelled successfully.",
       reservation 
     });
+
+    // Notify personnel in background
+    setImmediate(async () => {
+      try {
+        const personnel = reservation.personnel;
+        if (personnel?.fcmToken) {
+          const serviceNames = reservation.service.map(s => s.name).join(", ");
+          const reservationTime = new Date(reservation.date).toLocaleTimeString([], { 
+            hour: "2-digit", 
+            minute: "2-digit" 
+          });
+
+          const message = {
+            token: personnel.fcmToken,
+            notification: {
+              title: "❌ Reservation Cancelled",
+              body: `A client cancelled their booking for ${serviceNames} at ${reservationTime}.`
+            },
+            data: { 
+              reservationId: reservation._id.toString(),
+              type: 'cancellation'
+            },
+            android: { priority: 'high' }
+          };
+
+          await admin.messaging().send(message);
+          console.log(`FCM sent to personnel about cancellation`);
+        }
+      } catch (pushError) {
+        console.error(`Failed to send cancellation notification:`, pushError.message);
+      }
+    });
   } catch (error) {
     console.error("❌ Error cancelling reservation:", error);
-    res.status(500).json({ 
-      message: "Failed to cancel reservation.", 
-      error: error.message 
-    });
+    res.status(500).json({ message: "Failed to cancel reservation.", error: error.message });
   }
 });
-//
+
+// Get reservations for a specific day
 router.get("/day/:date", authMiddleware, async (req, res) => {
+  req.setTimeout(15000);
+  res.setTimeout(15000);
+
   try {
     const { date } = req.params;
     const { barbershopId, personnelId } = req.query;
@@ -681,8 +759,6 @@ router.get("/day/:date", authMiddleware, async (req, res) => {
 
     if (barbershopId) {
       query.barbershop = barbershopId;
-    } else {
-      console.warn("barbershopId missing in query for /day/:date route. This might return too many results.");
     }
 
     if (personnelId) {
@@ -695,7 +771,8 @@ router.get("/day/:date", authMiddleware, async (req, res) => {
       .populate("client", "firstName lastName profileImageUrl phone pushToken")
       .populate("service", "name duration price")
       .populate("personnel", "firstName lastName profileImageUrl")
-      .sort({ date: 1 });
+      .sort({ date: 1 })
+      .maxTimeMS(8000);
 
     const validReservations = reservations.filter(r => r.client && r.service);
 
