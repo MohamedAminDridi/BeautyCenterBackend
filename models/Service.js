@@ -23,6 +23,11 @@ const serviceSchema = new mongoose.Schema({
     type: Number, // Duration in minutes
     required: true,
   },
+  loyaltyPoints: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
   personnel: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
