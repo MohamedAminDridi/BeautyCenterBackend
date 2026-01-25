@@ -6,11 +6,11 @@ const Reward = require('../models/Reward');
 const authMiddleware = require('../middleware/authMiddleware');
 
 // ────────────────────────────────────────────────
-// GET /loyalty/me - Get loyalty data for logged-in user
+// GET /api/loyalty/me - Get loyalty data for logged-in user
 // ────────────────────────────────────────────────
 router.get('/me', authMiddleware, async (req, res) => {
   try {
-    console.log('📊 Fetching loyalty for user:', req.user.id);
+    console.log('📊 GET /api/loyalty/me - User ID:', req.user.id);
 
     // Find or create loyalty record
     let loyalty = await Loyalty.findOne({ userId: req.user.id });
@@ -25,7 +25,7 @@ router.get('/me', authMiddleware, async (req, res) => {
     }
 
     // Get all active rewards
-    const rewards = await Reward.find({ isActive: true });
+    const rewards = await Reward.find({ isActive: true }).catch(() => []);
 
     console.log('✅ Loyalty data found:', {
       userId: req.user.id,
@@ -35,18 +35,21 @@ router.get('/me', authMiddleware, async (req, res) => {
     });
 
     res.json({
-      points: loyalty.points,
-      history: loyalty.history,
-      rewards,
+      points: loyalty.points || 0,
+      history: loyalty.history || [],
+      rewards: rewards || [],
     });
   } catch (err) {
     console.error('❌ Loyalty fetch error:', err.message);
-    res.status(500).json({ message: 'Failed to fetch loyalty info' });
+    res.status(500).json({ 
+      message: 'Failed to fetch loyalty info',
+      error: err.message 
+    });
   }
 });
 
 // ────────────────────────────────────────────────
-// POST /loyalty/add - Add points manually (admin use)
+// POST /api/loyalty/add - Add points manually (admin use)
 // ────────────────────────────────────────────────
 router.post('/add', authMiddleware, async (req, res) => {
   try {
@@ -87,7 +90,7 @@ router.post('/add', authMiddleware, async (req, res) => {
 });
 
 // ────────────────────────────────────────────────
-// POST /loyalty/claim - Claim a reward (deduct points)
+// POST /api/loyalty/claim - Claim a reward (deduct points)
 // ────────────────────────────────────────────────
 router.post('/claim', authMiddleware, async (req, res) => {
   try {
@@ -138,47 +141,5 @@ router.post('/claim', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Failed to claim reward' });
   }
 });
-
-// ────────────────────────────────────────────────
-// Helper function to award points (called from reservations)
-// ────────────────────────────────────────────────
-async function awardLoyaltyPoints(userId, points, description) {
-  try {
-    if (!userId || !points || points <= 0) {
-      console.warn('⚠️ Invalid loyalty award attempt:', { userId, points });
-      return null;
-    }
-
-    const loyalty = await Loyalty.findOneAndUpdate(
-      { userId },
-      {
-        $inc: { points },
-        $push: {
-          history: {
-            description,
-            points,
-            date: new Date(),
-          },
-        },
-      },
-      { new: true, upsert: true }
-    );
-
-    console.log('✅ Loyalty points awarded:', {
-      userId,
-      points,
-      newTotal: loyalty.points,
-      description
-    });
-
-    return loyalty;
-  } catch (err) {
-    console.error('❌ Failed to award loyalty points:', err.message);
-    return null;
-  }
-}
-
-// Export the helper function
-router.awardLoyaltyPoints = awardLoyaltyPoints;
 
 module.exports = router;
