@@ -144,7 +144,7 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
     }
 
     const reservation = await Reservation.findById(reservationId)
-      .populate("service", "name")
+.populate("service", "name loyaltyPoints")
       .populate("client", "firstName lastName fcmToken phone")
       .populate("personnel", "firstName lastName fcmToken");
 
@@ -160,9 +160,58 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
       return res.status(400).json({ message: "Client ID does not match reservation." });
     }
 
-    reservation.status = status;
-    await reservation.save();
+// Track if this is a NEW confirmation
+const wasNotConfirmed = reservation.status !== 'confirmed';
+const isNowConfirmed = status === 'confirmed';
 
+reservation.status = status;
+await reservation.save();
+
+// ✨ AWARD LOYALTY POINTS ✨
+if (wasNotConfirmed && isNowConfirmed) {
+  try {
+    const services = Array.isArray(reservation.service) 
+      ? reservation.service 
+      : [reservation.service];
+    
+    const totalLoyaltyPoints = services.reduce((total, service) => {
+      return total + (service.loyaltyPoints || 0);
+    }, 0);
+
+    if (totalLoyaltyPoints > 0) {
+      const serviceNames = services.map(s => s.name).join(", ");
+      
+      let loyalty = await Loyalty.findOne({ userId: reservation.client._id });
+      
+      if (!loyalty) {
+        loyalty = new Loyalty({ 
+          userId: reservation.client._id, 
+          points: 0, 
+          history: [] 
+        });
+      }
+
+      loyalty.points += totalLoyaltyPoints;
+      loyalty.history.push({
+        description: `Confirmed booking: ${serviceNames}`,
+        points: totalLoyaltyPoints,
+        date: new Date(),
+      });
+
+      await loyalty.save();
+
+      console.log('🎉 LOYALTY POINTS AWARDED:', {
+        clientId: reservation.client._id,
+        pointsAwarded: totalLoyaltyPoints,
+        newTotal: loyalty.points
+      });
+    }
+  } catch (loyaltyError) {
+    console.error('❌ Failed to award loyalty points:', loyaltyError);
+  }
+}
+
+// Your existing FCM code continues here...
     const client = reservation.client;
     if (!client) {
       console.warn(`No client found for reservation ${reservationId}`);
