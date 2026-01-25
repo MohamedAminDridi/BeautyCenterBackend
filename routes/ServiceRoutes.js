@@ -34,24 +34,24 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
       barbershop,
     } = req.body;
 
-    // Required fields validation
+    // Validation
     if (!name) return res.status(400).json({ error: 'Service name is required' });
     if (!category) return res.status(400).json({ error: 'Service category is required' });
     if (!price) return res.status(400).json({ error: 'Service price is required' });
     if (!duration) return res.status(400).json({ error: 'Service duration is required' });
     if (!barbershop) return res.status(400).json({ error: 'Barbershop ID is required' });
 
-    // loyaltyPoints is now REQUIRED and validated
+    // loyaltyPoints REQUIRED
     if (loyaltyPoints === undefined || loyaltyPoints === '' || loyaltyPoints === null) {
       return res.status(400).json({ error: 'Loyalty points are required' });
     }
 
     const parsedLoyalty = parseInt(loyaltyPoints, 10);
     if (isNaN(parsedLoyalty) || parsedLoyalty < 0) {
-      return res.status(400).json({ error: 'Loyalty points must be a valid non-negative number' });
+      return res.status(400).json({ error: 'Loyalty points must be a valid non-negative integer' });
     }
 
-    // Parse personnel array safely
+    // Parse personnel array
     let personnelArray = [];
     if (personnel && personnel.trim()) {
       try {
@@ -64,7 +64,7 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
       }
     }
 
-    // Validate personnel IDs (only approved personnel from same barbershop)
+    // Validate personnel IDs
     if (personnelArray.length > 0) {
       const validPersonnel = await User.find({
         _id: { $in: personnelArray },
@@ -77,13 +77,11 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
       const invalidIds = personnelArray.filter(id => !validIds.includes(id));
 
       if (invalidIds.length > 0) {
-        return res.status(400).json({
-          error: `Invalid or unauthorized personnel IDs: ${invalidIds.join(', ')}`,
-        });
+        return res.status(400).json({ error: `Invalid personnel IDs: ${invalidIds.join(', ')}` });
       }
     }
 
-    // Handle image upload
+    // Image upload
     let imageUrl = '';
     if (req.file) {
       const result = await new Promise((resolve, reject) => {
@@ -95,14 +93,14 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
       imageUrl = result.secure_url;
     }
 
-    // Create service with loyaltyPoints included
+    // Create service – loyaltyPoints INCLUDED
     const newService = new Service({
       name,
       category,
       description,
       price: parseFloat(price),
       duration: parseInt(duration),
-      loyaltyPoints: parsedLoyalty,           // ← FIXED: now always saved
+      loyaltyPoints: parsedLoyalty,           // FIXED: now saved
       personnel: personnelArray,
       imageUrl,
       barbershop,
@@ -110,7 +108,7 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
 
     const saved = await newService.save();
 
-    console.log('🛒 Service created successfully:', {
+    console.log('🛒 Service created:', {
       _id: saved._id,
       name: saved.name,
       loyaltyPoints: saved.loyaltyPoints,
@@ -148,21 +146,32 @@ router.put('/:id', authMiddleware, upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'Barbershop ID is required' });
     }
 
-    // loyaltyPoints validation (optional on edit – keeps old value if missing)
-    let parsedLoyalty;
-    if (loyaltyPoints !== undefined && loyaltyPoints !== '') {
-      parsedLoyalty = parseInt(loyaltyPoints, 10);
-      if (isNaN(parsedLoyalty) || parsedLoyalty < 0) {
-        return res.status(400).json({ error: 'Loyalty points must be a valid non-negative number' });
+    // Parse loyaltyPoints only if provided (keep old value if missing)
+    const update = {
+      name,
+      category,
+      description,
+      price: parseFloat(price),
+      duration: parseInt(duration),
+      personnel: [],
+      barbershop,
+    };
+
+    // Handle loyaltyPoints update safely
+    if (loyaltyPoints !== undefined && loyaltyPoints !== '' && loyaltyPoints !== null) {
+      const parsedLoyalty = parseInt(loyaltyPoints, 10);
+      if (!isNaN(parsedLoyalty) && parsedLoyalty >= 0) {
+        update.loyaltyPoints = parsedLoyalty;
+      } else {
+        return res.status(400).json({ error: 'Loyalty points must be a valid non-negative integer' });
       }
     }
 
     // Parse personnel
-    let personnelArray = [];
     if (personnel && personnel.trim()) {
       try {
-        personnelArray = JSON.parse(personnel);
-        if (!Array.isArray(personnelArray)) {
+        update.personnel = JSON.parse(personnel);
+        if (!Array.isArray(update.personnel)) {
           return res.status(400).json({ error: 'Personnel must be an array of IDs' });
         }
       } catch (err) {
@@ -170,37 +179,21 @@ router.put('/:id', authMiddleware, upload.single('image'), async (req, res) => {
       }
     }
 
-    // Validate personnel IDs
-    if (personnelArray.length > 0) {
+    // Validate personnel IDs (if provided)
+    if (update.personnel.length > 0) {
       const validPersonnel = await User.find({
-        _id: { $in: personnelArray },
+        _id: { $in: update.personnel },
         barbershop,
         role: 'personnel',
         status: 'approved',
       }).select('_id');
 
       const validIds = validPersonnel.map(p => p._id.toString());
-      const invalidIds = personnelArray.filter(id => !validIds.includes(id));
+      const invalidIds = update.personnel.filter(id => !validIds.includes(id));
 
       if (invalidIds.length > 0) {
         return res.status(400).json({ error: `Invalid personnel IDs: ${invalidIds.join(', ')}` });
       }
-    }
-
-    // Build update object
-    const update = {
-      name,
-      category,
-      description,
-      price: parseFloat(price),
-      duration: parseInt(duration),
-      personnel: personnelArray,
-      barbershop,
-    };
-
-    // Only update loyaltyPoints if provided and valid
-    if (parsedLoyalty !== undefined) {
-      update.loyaltyPoints = parsedLoyalty;
     }
 
     // Image handling
@@ -212,7 +205,7 @@ router.put('/:id', authMiddleware, upload.single('image'), async (req, res) => {
         ).end(req.file.buffer);
       });
       update.imageUrl = result.secure_url;
-    } else if (imageUrl) {
+    } else if (imageUrl !== undefined) {
       update.imageUrl = imageUrl;
     }
 
@@ -239,9 +232,8 @@ router.put('/:id', authMiddleware, upload.single('image'), async (req, res) => {
 });
 
 // ────────────────────────────────────────────────
-// Other routes (unchanged but improved logging)
+// GET /services (all)
 // ────────────────────────────────────────────────
-
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const services = await Service.find()
@@ -249,7 +241,6 @@ router.get('/', authMiddleware, async (req, res) => {
       .populate('barbershop', 'name')
       .lean();
 
-    console.log(`Fetched ${services.length} services`);
     res.json(services);
   } catch (err) {
     console.error('GET /services error:', err);
@@ -257,6 +248,9 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
+// ────────────────────────────────────────────────
+// GET /services/:id
+// ────────────────────────────────────────────────
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const service = await Service.findById(req.params.id)
@@ -273,12 +267,14 @@ router.get('/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// ────────────────────────────────────────────────
+// DELETE /services/:id
+// ────────────────────────────────────────────────
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const deleted = await Service.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Service not found' });
 
-    console.log('🛒 Service deleted:', req.params.id);
     res.json({ message: 'Service deleted' });
   } catch (err) {
     console.error('DELETE /services/:id error:', err);
@@ -286,6 +282,9 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// ────────────────────────────────────────────────
+// GET /barbershops/:id/services
+// ────────────────────────────────────────────────
 router.get('/barbershops/:id/services', authMiddleware, async (req, res) => {
   try {
     const services = await Service.find({ barbershop: req.params.id })
@@ -300,6 +299,9 @@ router.get('/barbershops/:id/services', authMiddleware, async (req, res) => {
   }
 });
 
+// ────────────────────────────────────────────────
+// GET /barbershops/:barbershopId/personnel
+// ────────────────────────────────────────────────
 router.get('/barbershops/:barbershopId/personnel', authMiddleware, async (req, res) => {
   try {
     const personnel = await User.find({
