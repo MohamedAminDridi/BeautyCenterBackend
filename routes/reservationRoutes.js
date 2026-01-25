@@ -208,7 +208,7 @@ router.get("/upcoming", authMiddleware, async (req, res) => {
       date: { $gte: now },
     })
       .populate("client", "firstName lastName profileImageUrl phone")
-      .populate("service", "name")
+      .populate("service", "name imageUrl")
       .populate("personnel", "firstName lastName phone")
       .sort({ date: 1 });
     res.status(200).json(upcomingReservations);
@@ -227,7 +227,7 @@ router.get("/past", authMiddleware, async (req, res) => {
       date: { $lt: now },
     })
       .populate("client", "firstName lastName profileImageUrl phone")
-      .populate("service", "name")
+      .populate("service", "name imageUrl")
       .populate("personnel", "firstName lastName")
       .sort({ date: -1 });
     res.status(200).json(pastReservations);
