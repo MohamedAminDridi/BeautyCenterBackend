@@ -45,27 +45,46 @@ router.post('/', authMiddleware, async (req, res) => {
 });
 
 // ✅ Get all favorites for the logged-in client (grouped by type)
+// routes/favorites.js (GET route only – replace the existing one)
+
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const client = req.user.id;
 
-    const favorites = await Favorite.find({ client })
-      .populate({
-        path: 'item',
-        select: 'name logoUrl imageUrl firstName lastName role location address', // adjust fields as needed
-      })
-      .sort({ createdAt: -1 });
+    // First get raw favorites without populate
+    const rawFavorites = await Favorite.find({ client }).sort({ createdAt: -1 });
 
-    // Group them for easier frontend use
+    // Manually populate each one
+    const populated = await Promise.all(
+      rawFavorites.map(async (fav) => {
+        let Model;
+        if (fav.type === 'shop') Model = mongoose.model('Barbershop');
+        else if (fav.type === 'service') Model = mongoose.model('Service');
+        else if (fav.type === 'personnel') Model = mongoose.model('User'); // or Personnel if you have separate model
+
+        if (!Model) return fav.toObject(); // fallback
+
+        const item = await Model.findById(fav.item).select(
+          'name logoUrl imageUrl firstName lastName role location address specialty'
+        );
+
+        return {
+          ...fav.toObject(),
+          item,
+        };
+      })
+    );
+
+    // Group for frontend
     const grouped = {
-      shops: favorites.filter(f => f.type === 'shop'),
-      services: favorites.filter(f => f.type === 'service'),
-      personnel: favorites.filter(f => f.type === 'personnel'),
+      shops: populated.filter(f => f.type === 'shop'),
+      services: populated.filter(f => f.type === 'service'),
+      personnel: populated.filter(f => f.type === 'personnel'),
     };
 
     res.json(grouped);
   } catch (err) {
-    console.error('Error fetching favorites:', err);
+    console.error('GET /favorites error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });
