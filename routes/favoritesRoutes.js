@@ -1,24 +1,28 @@
 // routes/favorites.js
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Favorite = require('../models/Favorite');
 const authMiddleware = require('../middleware/authMiddleware');
 
-// ✅ Add to favorites (shop, service, or personnel)
+// Make sure these models are imported (or ensure they are loaded earlier in your app)
+const Barbershop = mongoose.model('Barbershop');
+const Service = mongoose.model('Service');
+const User = mongoose.model('User'); // or Personnel if you have a separate model
+
+// ✅ Add to favorites (shop / service / personnel)
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    const { type, itemId } = req.body; // type: 'shop' | 'service' | 'personnel'
-    const client = req.user.id; // assuming your authMiddleware sets req.user.id
+    const { type, itemId } = req.body;
+    const client = req.user.id;
 
     if (!['shop', 'service', 'personnel'].includes(type)) {
       return res.status(400).json({ message: 'Invalid favorite type' });
     }
 
-    if (!itemId) {
-      return res.status(400).json({ message: 'Item ID is required' });
+    if (!mongoose.Types.ObjectId.isValid(itemId)) {
+      return res.status(400).json({ message: 'Invalid item ID' });
     }
-
-    console.log(`Adding favorite - Client: ${client}, Type: ${type}, Item: ${itemId}`);
 
     // Check if already favorited
     const existing = await Favorite.findOne({ client, type, item: itemId });
@@ -34,43 +38,64 @@ router.post('/', authMiddleware, async (req, res) => {
 
     await favorite.save();
 
-    // Populate the item for response
-    const populated = await Favorite.findById(favorite._id).populate('item');
+    // Manually populate the item
+    let populatedItem = null;
+    try {
+      if (type === 'shop') {
+        populatedItem = await Barbershop.findById(itemId).select('name logoUrl location address');
+      } else if (type === 'service') {
+        populatedItem = await Service.findById(itemId).select('name imageUrl duration price');
+      } else if (type === 'personnel') {
+        populatedItem = await User.findById(itemId).select('firstName lastName profileImageUrl role specialty');
+      }
+    } catch (populateErr) {
+      console.warn(`Populate failed for ${type} ${itemId}:`, populateErr.message);
+    }
 
-    res.status(201).json(populated);
+    res.status(201).json({
+      ...favorite.toObject(),
+      item: populatedItem || { _id: itemId, name: 'Item (details unavailable)' },
+    });
   } catch (err) {
-    console.error('Error adding favorite:', err);
+    console.error('POST /favorites error:', err.stack || err.message);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
 
-// ✅ Get all favorites for the logged-in client (grouped by type)
-// routes/favorites.js (GET route only – replace the existing one)
-
+// ✅ Get all favorites (grouped by type) – fixed population
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const client = req.user.id;
 
-    // First get raw favorites without populate
+    // Get raw favorites
     const rawFavorites = await Favorite.find({ client }).sort({ createdAt: -1 });
 
-    // Manually populate each one
+    // Manually populate each favorite
     const populated = await Promise.all(
       rawFavorites.map(async (fav) => {
-        let Model;
-        if (fav.type === 'shop') Model = mongoose.model('Barbershop');
-        else if (fav.type === 'service') Model = mongoose.model('Service');
-        else if (fav.type === 'personnel') Model = mongoose.model('User'); // or Personnel if you have separate model
+        let populatedItem = null;
 
-        if (!Model) return fav.toObject(); // fallback
-
-        const item = await Model.findById(fav.item).select(
-          'name logoUrl imageUrl firstName lastName role location address specialty'
-        );
+        try {
+          if (fav.type === 'shop') {
+            populatedItem = await Barbershop.findById(fav.item).select(
+              'name logoUrl location address'
+            );
+          } else if (fav.type === 'service') {
+            populatedItem = await Service.findById(fav.item).select(
+              'name imageUrl duration price'
+            );
+          } else if (fav.type === 'personnel') {
+            populatedItem = await User.findById(fav.item).select(
+              'firstName lastName profileImageUrl role specialty'
+            );
+          }
+        } catch (populateErr) {
+          console.warn(`Populate failed for ${fav.type} ${fav.item}:`, populateErr.message);
+        }
 
         return {
           ...fav.toObject(),
-          item,
+          item: populatedItem || { _id: fav.item, name: 'Item (details unavailable)' },
         };
       })
     );
@@ -84,8 +109,8 @@ router.get('/', authMiddleware, async (req, res) => {
 
     res.json(grouped);
   } catch (err) {
-    console.error('GET /favorites error:', err);
-    res.status(500).json({ message: 'Server error' });
+    console.error('GET /favorites error:', err.stack || err.message);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
 
@@ -97,6 +122,10 @@ router.delete('/:type/:itemId', authMiddleware, async (req, res) => {
 
     if (!['shop', 'service', 'personnel'].includes(type)) {
       return res.status(400).json({ message: 'Invalid type' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(itemId)) {
+      return res.status(400).json({ message: 'Invalid item ID' });
     }
 
     const deleted = await Favorite.findOneAndDelete({
@@ -111,8 +140,8 @@ router.delete('/:type/:itemId', authMiddleware, async (req, res) => {
 
     res.json({ message: 'Removed from favorites', deleted });
   } catch (err) {
-    console.error('Error removing favorite:', err);
-    res.status(500).json({ message: 'Server error' });
+    console.error('DELETE /favorites error:', err.stack || err.message);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
 
