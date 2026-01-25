@@ -144,7 +144,7 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
     }
 
     const reservation = await Reservation.findById(reservationId)
-      .populate("service", "name loyaltyPoints") // ✅ Include loyaltyPoints
+      .populate("service", "name")
       .populate("client", "firstName lastName fcmToken phone")
       .populate("personnel", "firstName lastName fcmToken");
 
@@ -160,62 +160,9 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
       return res.status(400).json({ message: "Client ID does not match reservation." });
     }
 
-    // Track previous status for loyalty points
-    const wasNotConfirmed = reservation.status !== 'confirmed';
-
     reservation.status = status;
     await reservation.save();
 
-    // ✨✨✨ AWARD LOYALTY POINTS WHEN CONFIRMED ✨✨✨
-    if (status === 'confirmed' && wasNotConfirmed) {
-      try {
-        // Calculate total loyalty points from all services
-        const services = Array.isArray(reservation.service) 
-          ? reservation.service 
-          : [reservation.service];
-        
-        const totalLoyaltyPoints = services.reduce((total, service) => {
-          return total + (service.loyaltyPoints || 0);
-        }, 0);
-
-        if (totalLoyaltyPoints > 0) {
-          const serviceNames = services.map(s => s.name).join(", ");
-          
-          // Find or create loyalty record
-          let loyalty = await Loyalty.findOne({ userId: reservation.client._id });
-          
-          if (!loyalty) {
-            loyalty = new Loyalty({ 
-              userId: reservation.client._id, 
-              points: 0, 
-              history: [] 
-            });
-          }
-
-          // Add points
-          loyalty.points += totalLoyaltyPoints;
-          loyalty.history.push({
-            description: `Confirmed booking: ${serviceNames}`,
-            points: totalLoyaltyPoints,
-            date: new Date(),
-          });
-
-          await loyalty.save();
-
-          console.log('🎉 LOYALTY POINTS AWARDED:', {
-            clientId: reservation.client._id,
-            pointsAwarded: totalLoyaltyPoints,
-            newTotal: loyalty.points,
-            services: serviceNames
-          });
-        }
-      } catch (loyaltyError) {
-        console.error('❌ Failed to award loyalty points:', loyaltyError);
-        // Don't fail the reservation update if loyalty fails
-      }
-    }
-
-    // Send FCM notification to client
     const client = reservation.client;
     if (!client) {
       console.warn(`No client found for reservation ${reservationId}`);
@@ -223,10 +170,7 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
       console.warn(`No fcmToken for client ${client._id}`);
     } else {
       const serviceNames = reservation.service.map(s => s.name).join(", ");
-      const reservationTime = new Date(reservation.date).toLocaleTimeString([], { 
-        hour: "2-digit", 
-        minute: "2-digit" 
-      });
+      const reservationTime = new Date(reservation.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
       try {
         const message = {
@@ -251,90 +195,7 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
     return res.status(200).json(reservation);
   } catch (error) {
     console.error("❌ Error updating reservation status:", error.message);
-    return res.status(500).json({ 
-      message: "Server error. Could not update reservation status.", 
-      error: error.message 
-    });
-  }
-});
-
-// ────────────────────────────────────────────────
-// Alternative approach: Award points when reservation is completed
-// (Add this if you want to award points only after service is done)
-// ────────────────────────────────────────────────
-router.patch("/:id/complete", authMiddleware, authorizeRoles("personnel"), async (req, res) => {
-  try {
-    const reservationId = req.params.id;
-    const personnelId = req.user.id;
-
-    const reservation = await Reservation.findById(reservationId)
-      .populate("service", "name loyaltyPoints")
-      .populate("client", "firstName lastName fcmToken");
-
-    if (!reservation) {
-      return res.status(404).json({ message: "Reservation not found." });
-    }
-
-    if (reservation.personnel.toString() !== personnelId) {
-      return res.status(403).json({ message: "Unauthorized." });
-    }
-
-    if (reservation.status === 'completed') {
-      return res.status(400).json({ message: "Reservation already completed." });
-    }
-
-    reservation.status = 'completed';
-    await reservation.save();
-
-    // ✨ Award loyalty points for completed service
-    try {
-      const services = Array.isArray(reservation.service) 
-        ? reservation.service 
-        : [reservation.service];
-      
-      const totalLoyaltyPoints = services.reduce((total, service) => {
-        return total + (service.loyaltyPoints || 0);
-      }, 0);
-
-      if (totalLoyaltyPoints > 0) {
-        const serviceNames = services.map(s => s.name).join(", ");
-        
-        let loyalty = await Loyalty.findOne({ userId: reservation.client._id });
-        
-        if (!loyalty) {
-          loyalty = new Loyalty({ 
-            userId: reservation.client._id, 
-            points: 0, 
-            history: [] 
-          });
-        }
-
-        loyalty.points += totalLoyaltyPoints;
-        loyalty.history.push({
-          description: `Completed service: ${serviceNames}`,
-          points: totalLoyaltyPoints,
-          date: new Date(),
-        });
-
-        await loyalty.save();
-
-        console.log('🎉 LOYALTY POINTS AWARDED (COMPLETION):', {
-          clientId: reservation.client._id,
-          pointsAwarded: totalLoyaltyPoints,
-          newTotal: loyalty.points
-        });
-      }
-    } catch (loyaltyError) {
-      console.error('❌ Failed to award loyalty points:', loyaltyError);
-    }
-
-    res.json({ 
-      message: 'Reservation marked as completed',
-      reservation 
-    });
-  } catch (error) {
-    console.error("❌ Error completing reservation:", error);
-    res.status(500).json({ message: "Failed to complete reservation." });
+    return res.status(500).json({ message: "Server error. Could not update reservation status.", error: error.message });
   }
 });
 
