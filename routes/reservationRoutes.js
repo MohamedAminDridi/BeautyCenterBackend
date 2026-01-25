@@ -133,6 +133,7 @@ router.post("/", authMiddleware, async (req, res) => {
 });
 
 // Update reservation status and notify client (FCM)
+// Update reservation status and notify client (FCM)
 router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (req, res) => {
   try {
     const { status, clientId } = req.body;
@@ -144,7 +145,7 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
     }
 
     const reservation = await Reservation.findById(reservationId)
-.populate("service", "name loyaltyPoints")
+      .populate("service", "name loyaltyPoints") // ✅ Include loyaltyPoints
       .populate("client", "firstName lastName fcmToken phone")
       .populate("personnel", "firstName lastName fcmToken");
 
@@ -160,66 +161,76 @@ router.patch("/:id/status", authMiddleware, authorizeRoles("personnel"), async (
       return res.status(400).json({ message: "Client ID does not match reservation." });
     }
 
-// Track if this is a NEW confirmation
-const wasNotConfirmed = reservation.status !== 'confirmed';
-const isNowConfirmed = status === 'confirmed';
+    // ✅ Track if this is a NEW confirmation (check BEFORE updating)
+    const wasNotConfirmed = reservation.status !== 'confirmed';
+    const isNowConfirmed = status === 'confirmed';
 
-reservation.status = status;
-await reservation.save();
+    // ✅ Update status and save
+    reservation.status = status;
+    await reservation.save();
 
-// ✨ AWARD LOYALTY POINTS ✨
-if (wasNotConfirmed && isNowConfirmed) {
-  try {
-    const services = Array.isArray(reservation.service) 
-      ? reservation.service 
-      : [reservation.service];
-    
-    const totalLoyaltyPoints = services.reduce((total, service) => {
-      return total + (service.loyaltyPoints || 0);
-    }, 0);
+    // ✨✨✨ AWARD LOYALTY POINTS ✨✨✨
+    if (wasNotConfirmed && isNowConfirmed) {
+      try {
+        const services = Array.isArray(reservation.service) 
+          ? reservation.service 
+          : [reservation.service];
+        
+        const totalLoyaltyPoints = services.reduce((total, service) => {
+          return total + (service.loyaltyPoints || 0);
+        }, 0);
 
-    if (totalLoyaltyPoints > 0) {
-      const serviceNames = services.map(s => s.name).join(", ");
-      
-      let loyalty = await Loyalty.findOne({ userId: reservation.client._id });
-      
-      if (!loyalty) {
-        loyalty = new Loyalty({ 
-          userId: reservation.client._id, 
-          points: 0, 
-          history: [] 
-        });
+        if (totalLoyaltyPoints > 0) {
+          const serviceNames = services.map(s => s.name).join(", ");
+          
+          let loyalty = await Loyalty.findOne({ userId: reservation.client._id });
+          
+          if (!loyalty) {
+            loyalty = new Loyalty({ 
+              userId: reservation.client._id, 
+              points: 0, 
+              history: [] 
+            });
+          }
+
+          loyalty.points += totalLoyaltyPoints;
+          loyalty.history.push({
+            description: `Confirmed booking: ${serviceNames}`,
+            points: totalLoyaltyPoints,
+            date: new Date(),
+          });
+
+          await loyalty.save();
+
+          console.log('🎉 LOYALTY POINTS AWARDED:', {
+            clientId: reservation.client._id,
+            pointsAwarded: totalLoyaltyPoints,
+            newTotal: loyalty.points,
+            services: serviceNames
+          });
+        }
+      } catch (loyaltyError) {
+        console.error('❌ Failed to award loyalty points:', loyaltyError);
+        // Don't fail the reservation update if loyalty fails
       }
-
-      loyalty.points += totalLoyaltyPoints;
-      loyalty.history.push({
-        description: `Confirmed booking: ${serviceNames}`,
-        points: totalLoyaltyPoints,
-        date: new Date(),
-      });
-
-      await loyalty.save();
-
-      console.log('🎉 LOYALTY POINTS AWARDED:', {
-        clientId: reservation.client._id,
-        pointsAwarded: totalLoyaltyPoints,
-        newTotal: loyalty.points
-      });
     }
-  } catch (loyaltyError) {
-    console.error('❌ Failed to award loyalty points:', loyaltyError);
-  }
-}
 
-// Your existing FCM code continues here...
+    // ✅ Send FCM notification to client
     const client = reservation.client;
     if (!client) {
       console.warn(`No client found for reservation ${reservationId}`);
     } else if (!client.fcmToken) {
       console.warn(`No fcmToken for client ${client._id}`);
     } else {
-      const serviceNames = reservation.service.map(s => s.name).join(", ");
-      const reservationTime = new Date(reservation.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      // ✅ Define serviceNames here (outside loyalty block)
+      const serviceNames = Array.isArray(reservation.service)
+        ? reservation.service.map(s => s.name).join(", ")
+        : reservation.service.name || "your service";
+      
+      const reservationTime = new Date(reservation.date).toLocaleTimeString([], { 
+        hour: "2-digit", 
+        minute: "2-digit" 
+      });
 
       try {
         const message = {
@@ -235,35 +246,19 @@ if (wasNotConfirmed && isNowConfirmed) {
         };
 
         const response = await admin.messaging().send(message);
-        console.log(`FCM sent to client ${client._id}:`, response);
+        console.log(`✅ FCM sent to client ${client._id}:`, response);
       } catch (pushError) {
-        console.error(`Failed to send ${status} notification to client ${client._id}:`, pushError);
+        console.error(`❌ Failed to send ${status} notification to client ${client._id}:`, pushError);
       }
     }
 
     return res.status(200).json(reservation);
   } catch (error) {
     console.error("❌ Error updating reservation status:", error.message);
-    return res.status(500).json({ message: "Server error. Could not update reservation status.", error: error.message });
-  }
-});
-
-// Get upcoming reservations for the authenticated client
-router.get("/upcoming", authMiddleware, async (req, res) => {
-  try {
-    const now = new Date();
-    const upcomingReservations = await Reservation.find({
-      client: req.user.id,
-      date: { $gte: now },
-    })
-      .populate("client", "firstName lastName profileImageUrl phone")
-      .populate("service", "name imageUrl")
-      .populate("personnel", "firstName lastName phone")
-      .sort({ date: 1 });
-    res.status(200).json(upcomingReservations);
-  } catch (error) {
-    console.error("❌ Error fetching upcoming reservations:", error);
-    res.status(500).json({ message: "Failed to fetch upcoming reservations.", error: error.message });
+    return res.status(500).json({ 
+      message: "Server error. Could not update reservation status.", 
+      error: error.message 
+    });
   }
 });
 
